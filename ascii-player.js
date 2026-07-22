@@ -84,6 +84,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     vig: u("u_vig"),
     zoom: u("u_zoom"),
     fit: u("u_fit"),
+    pixels: u("u_pixels"),
     flash: u("u_flash"),
     glyphCount: u("u_glyph_count"),
     trailCount: u("u_trail_count"),
@@ -113,6 +114,13 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   });
   canvas.addEventListener("pointerleave", () => { mouse.on = false; });
   gl.uniform1f(U.zoom, 1.0); // growth is physical (canvas size), not shader magnify
+
+  // press "p" to toggle raw pixel blocks (solid color per cell, no glyphs)
+  let pixels = false;
+  gl.uniform1f(U.pixels, 0);
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "p") { pixels = !pixels; gl.uniform1f(U.pixels, pixels ? 1 : 0); }
+  });
   let growScale = p.growStart; // current box size as a fraction of the viewport
 
   // --- scroll grows the canvas box from growStart*viewport to full viewport,
@@ -263,7 +271,7 @@ function fsrc(trailMax) {
   uniform sampler2D u_glyph;
   uniform vec2 u_res, u_video_res;
   uniform float u_cell, u_contrast, u_brightness, u_fisheye, u_fisheye_y;
-  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit;
+  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit, u_pixels;
   uniform float u_glyph_count;
   uniform int u_trail_count;
   uniform vec3 u_trail[${trailMax}];
@@ -319,6 +327,7 @@ function fsrc(trailMax) {
     float gi = floor((1.0 - lum) * (u_glyph_count - 1.0) + 0.5);
     vec2 guv = vec2((gi + local.x) / u_glyph_count, 1.0 - local.y); // glyphs upside down
     float mask = texture2D(u_glyph, guv).r;
+    mask = mix(mask, 1.0, u_pixels); // pixel mode: solid color block per cell
 
     // chromatic aberration on the tint color
     vec2 ca = vec2(u_chroma / u_res.x, 0.0);
