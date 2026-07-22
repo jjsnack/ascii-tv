@@ -14,13 +14,14 @@ No precompute step, no baked asset, any-length clip, interactive.
 ## Run the example
 
 ```sh
-./serve.sh          # http://localhost:8000, then open index.html
-./serve.sh 9000     # custom port
+./serve.sh                 # sample.mp4 on http://localhost:8000
+./serve.sh myclip.mp4      # a different clip (must be in this folder)
+./serve.sh myclip.mp4 9000 # custom port
 ```
 
-http:// is required — ES modules and the `<video>` texture upload both refuse
-`file://`. `index.html` is a complete demo: move the mouse over the tube to warp
-it, scroll to zoom. It plays the bundled `sample.mp4`.
+Serves the folder and opens the browser at `index.html?v=<video>`. http:// is
+required — ES modules and the `<video>` texture upload both refuse `file://`.
+The demo: move the mouse over the tube to warp it, scroll to zoom.
 
 ## Integrate into a site
 

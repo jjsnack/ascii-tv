@@ -15,18 +15,19 @@ const TRAIL_MAX = 12;
 export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   const p = {
     internalW: 1024, // internal render width (px); height follows video aspect
-    cell: 6, // glyph cell size in internal px (smaller = denser)
+    cell: 10, // glyph cell size in internal px (smaller = denser)
     contrast: 1.15,
-    brightness: 0.0, // additive, -1..1
-    fisheye: 0.18, // barrel bulge strength
-    mouseRadius: 120, // px falloff of the mouse warp
-    mouseStrength: 34, // px displacement at the mouse
-    trailDecay: 0.9, // per-frame decay of trailing warp points
+    brightness: 0.12, // additive, -1..1
+    fisheye: 0.25, // horizontal barrel bulge strength
+    fisheyeY: 0.55, // vertical bulge — higher = more curve on top/bottom edges
+    mouseRadius: 40, // px falloff of the mouse warp
+    mouseStrength: 15, // px displacement at the mouse
     chroma: 2.0, // px RGB split
-    glow: 0.5, // additive glyph glow
+    glow: 0.7, // additive glyph glow
     scanline: 0.14,
     vignette: 0.35,
-    zoomPerScroll: 0.25, // extra zoom at full page scroll
+    zoomStart: 0.6, // <1 = picture starts small in the tube
+    zoomEnd: 2.6, // magnification at full page scroll
     glyphChars: "@#W$9876543210?!abc;:+=-,._  ",
     background: "#000000",
     ...opts,
@@ -75,6 +76,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     contrast: u("u_contrast"),
     brightness: u("u_brightness"),
     fisheye: u("u_fisheye"),
+    fisheyeY: u("u_fisheye_y"),
     mouseRadius: u("u_mouse_radius"),
     chroma: u("u_chroma"),
     glow: u("u_glow"),
@@ -92,6 +94,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   gl.uniform1f(U.contrast, p.contrast);
   gl.uniform1f(U.brightness, p.brightness);
   gl.uniform1f(U.fisheye, p.fisheye);
+  gl.uniform1f(U.fisheyeY, p.fisheyeY);
   gl.uniform1f(U.mouseRadius, p.mouseRadius);
   gl.uniform1f(U.chroma, p.chroma);
   gl.uniform1f(U.glow, p.glow);
@@ -99,19 +102,20 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   gl.uniform1f(U.vig, p.vignette);
   gl.uniform1f(U.glyphCount, p.glyphChars.length);
 
-  // --- interaction: mouse-warp trail + scroll zoom -----------------------
-  const trail = []; // {x, y, s} in uv space
+  // --- interaction: mouse warp (exact) + scroll zoom ---------------------
+  const mouse = { x: 0, y: 0, on: false }; // single live point under the cursor
   canvas.addEventListener("pointermove", (e) => {
     const r = canvas.getBoundingClientRect();
-    // y is flipped: pointer is top-down, shader v_uv.y is bottom-up
-    trail.unshift({ x: (e.clientX - r.left) / r.width, y: 1 - (e.clientY - r.top) / r.height, s: p.mouseStrength });
-    if (trail.length > TRAIL_MAX) trail.pop();
+    mouse.x = (e.clientX - r.left) / r.width;
+    mouse.y = 1 - (e.clientY - r.top) / r.height; // pointer top-down, v_uv bottom-up
+    mouse.on = true;
   });
-  let zoom = 1;
+  canvas.addEventListener("pointerleave", () => { mouse.on = false; });
+  let zoom = p.zoomStart;
   const onScroll = () => {
     const max = document.documentElement.scrollHeight - window.innerHeight;
     const prog = max > 0 ? window.scrollY / max : 0;
-    zoom = 1 + prog * p.zoomPerScroll;
+    zoom = p.zoomStart + prog * (p.zoomEnd - p.zoomStart);
   };
   window.addEventListener("scroll", onScroll, { passive: true });
 
@@ -140,17 +144,9 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     if (ready && video.readyState >= 2) {
       if (flashStart === 0) flashStart = now; // ramp on the first real frame, not an event
 
-      // decay + upload the mouse-warp trail
-      const flat = new Float32Array(TRAIL_MAX * 3);
-      for (let i = 0; i < trail.length; i++) {
-        trail[i].s *= p.trailDecay;
-        flat[i * 3] = trail[i].x;
-        flat[i * 3 + 1] = trail[i].y;
-        flat[i * 3 + 2] = trail[i].s;
-      }
-      while (trail.length && trail[trail.length - 1].s < 0.5) trail.pop();
-      gl.uniform3fv(U.trail, flat);
-      gl.uniform1i(U.trailCount, trail.length);
+      // one warp point, pinned exactly under the cursor
+      gl.uniform3f(U.trail, mouse.x, mouse.y, p.mouseStrength);
+      gl.uniform1i(U.trailCount, mouse.on ? 1 : 0);
       gl.uniform1f(U.zoom, zoom);
 
       const flash = flashStart ? Math.min(1, (now - flashStart) / 450) : 0;
@@ -195,7 +191,7 @@ function uploadVideo(gl, video) {
 }
 
 // --- glyph atlas: dark->light ramp baked to a 1-row texture --------------
-function makeGlyphAtlas(gl, chars, glyphSize = 48) {
+function makeGlyphAtlas(gl, chars, glyphSize = 72) {
   const c = document.createElement("canvas");
   c.width = chars.length * glyphSize;
   c.height = glyphSize;
@@ -242,7 +238,7 @@ function fsrc(trailMax) {
   uniform sampler2D u_video;
   uniform sampler2D u_glyph;
   uniform vec2 u_res, u_video_res;
-  uniform float u_cell, u_contrast, u_brightness, u_fisheye;
+  uniform float u_cell, u_contrast, u_brightness, u_fisheye, u_fisheye_y;
   uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash;
   uniform float u_glyph_count;
   uniform int u_trail_count;
@@ -261,7 +257,9 @@ function fsrc(trailMax) {
   vec2 warp(vec2 uv) {
     uv = (uv - 0.5) / u_zoom + 0.5;
     vec2 c = uv - 0.5;
-    uv += c * u_fisheye * dot(c, c);
+    float r2 = dot(c, c);
+    uv.x += c.x * u_fisheye * r2;   // horizontal bulge
+    uv.y += c.y * u_fisheye_y * r2; // stronger vertical bulge on top/bottom edges
     for (int i = 0; i < ${trailMax}; i++) {
       if (i >= u_trail_count) break;
       vec2 d = (uv - u_trail[i].xy) * u_res;   // px offset from trail point
@@ -294,7 +292,7 @@ function fsrc(trailMax) {
     float lum = dot(mid, vec3(0.299, 0.587, 0.114));
     lum = clamp((lum - 0.5) * u_contrast + 0.5 + u_brightness, 0.0, 1.0);
     float gi = floor((1.0 - lum) * (u_glyph_count - 1.0) + 0.5);
-    vec2 guv = vec2((gi + local.x) / u_glyph_count, local.y);
+    vec2 guv = vec2((gi + local.x) / u_glyph_count, 1.0 - local.y); // glyphs upside down
     float mask = texture2D(u_glyph, guv).r;
 
     // chromatic aberration on the tint color
