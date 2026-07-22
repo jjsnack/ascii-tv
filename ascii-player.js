@@ -14,8 +14,7 @@ const TRAIL_MAX = 12;
 
 export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   const p = {
-    internalW: 1024, // internal render width (px); height follows video aspect
-    cell: 10, // glyph cell size in internal px (smaller = denser)
+    cell: 16, // glyph cell size in internal px (bigger = chunkier glyphs, fewer cells)
     contrast: 1.15,
     brightness: 0.12, // additive, -1..1
     fisheye: 0.25, // horizontal barrel bulge strength
@@ -26,8 +25,8 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     glow: 0.7, // additive glyph glow
     scanline: 0.14,
     vignette: 0.35,
-    zoomStart: 0.6, // <1 = picture starts small in the tube
-    zoomEnd: 2.6, // magnification at full page scroll
+    growStart: 0.42, // fraction of the viewport the tube fills before scrolling
+    dprCap: 2, // clamp devicePixelRatio so huge/retina viewports don't over-render
     glyphChars: "@#W$9876543210?!abc;:+=-,._  ",
     background: "#000000",
     ...opts,
@@ -83,6 +82,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     scan: u("u_scan"),
     vig: u("u_vig"),
     zoom: u("u_zoom"),
+    fit: u("u_fit"),
     flash: u("u_flash"),
     glyphCount: u("u_glyph_count"),
     trailCount: u("u_trail_count"),
@@ -102,7 +102,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   gl.uniform1f(U.vig, p.vignette);
   gl.uniform1f(U.glyphCount, p.glyphChars.length);
 
-  // --- interaction: mouse warp (exact) + scroll zoom ---------------------
+  // --- interaction: mouse warp (exact) + scroll-driven growth ------------
   const mouse = { x: 0, y: 0, on: false }; // single live point under the cursor
   canvas.addEventListener("pointermove", (e) => {
     const r = canvas.getBoundingClientRect();
@@ -111,23 +111,34 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     mouse.on = true;
   });
   canvas.addEventListener("pointerleave", () => { mouse.on = false; });
-  let zoom = p.zoomStart;
-  const onScroll = () => {
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    const prog = max > 0 ? window.scrollY / max : 0;
-    zoom = p.zoomStart + prog * (p.zoomEnd - p.zoomStart);
-  };
-  window.addEventListener("scroll", onScroll, { passive: true });
+  gl.uniform1f(U.zoom, 1.0); // growth is physical (canvas size), not shader magnify
 
-  // --- size to the video once we know its dimensions ---------------------
+  // --- scroll grows the canvas box from growStart*viewport to full viewport,
+  // and the internal resolution tracks the box so the glyph grid gains cells
+  // as it grows (bigger picture, constant glyph density — not a zoom). ------
+  function layout() {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const t = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+    const scale = p.growStart + t * (1 - p.growStart);
+    const cssW = Math.round(window.innerWidth * scale);
+    const cssH = Math.round(window.innerHeight * scale);
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    const dpr = Math.min(window.devicePixelRatio || 1, p.dprCap);
+    canvas.width = Math.max(1, Math.round(cssW * dpr));
+    canvas.height = Math.max(1, Math.round(cssH * dpr));
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(U.res, canvas.width, canvas.height);
+    gl.uniform1f(U.fit, t); // start uncropped (contain), end cropped to fill (cover)
+  }
+  window.addEventListener("scroll", layout, { passive: true });
+  window.addEventListener("resize", layout);
+  layout();
+
+  // --- record the video's dimensions once we know them -------------------
   let ready = false;
   let flashStart = 0;
   video.addEventListener("loadedmetadata", () => {
-    const aspect = video.videoWidth / video.videoHeight;
-    canvas.width = p.internalW;
-    canvas.height = Math.round(p.internalW / aspect);
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.uniform2f(U.res, canvas.width, canvas.height);
     gl.uniform2f(U.videoRes, video.videoWidth, video.videoHeight);
     ready = true;
     if (video.paused) video.currentTime = 0.05; // force one decoded frame if autoplay is blocked
@@ -147,7 +158,6 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
       // one warp point, pinned exactly under the cursor
       gl.uniform3f(U.trail, mouse.x, mouse.y, p.mouseStrength);
       gl.uniform1i(U.trailCount, mouse.on ? 1 : 0);
-      gl.uniform1f(U.zoom, zoom);
 
       const flash = flashStart ? Math.min(1, (now - flashStart) / 450) : 0;
       gl.uniform1f(U.flash, flash);
@@ -239,18 +249,19 @@ function fsrc(trailMax) {
   uniform sampler2D u_glyph;
   uniform vec2 u_res, u_video_res;
   uniform float u_cell, u_contrast, u_brightness, u_fisheye, u_fisheye_y;
-  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash;
+  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit;
   uniform float u_glyph_count;
   uniform int u_trail_count;
   uniform vec3 u_trail[${trailMax}];
 
-  // cover-fit the video into the canvas box
+  // fit the video into the canvas box, blending contain (u_fit=0, whole video
+  // visible, letterboxed) -> cover (u_fit=1, fills the box, crops overflow).
   vec2 coverUV(vec2 uv) {
-    float src = u_video_res.x / u_video_res.y;
-    float dst = u_res.x / u_res.y;
-    if (dst > src) { float s = src / dst; uv.y = uv.y * s + (1.0 - s) * 0.5; }
-    else           { float s = dst / src; uv.x = uv.x * s + (1.0 - s) * 0.5; }
-    return uv;
+    float ar = (u_video_res.x / u_video_res.y) / (u_res.x / u_res.y); // video/box aspect
+    vec2 s;
+    if (ar <= 1.0) s = vec2(mix(1.0 / ar, 1.0, u_fit), mix(1.0, ar, u_fit)); // box wider
+    else           s = vec2(mix(1.0, 1.0 / ar, u_fit), mix(ar, 1.0, u_fit)); // box taller
+    return (uv - 0.5) * s + 0.5;
   }
 
   // fisheye barrel + scroll zoom + mouse-warp trail, all in screen space

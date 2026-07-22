@@ -14,35 +14,34 @@
       text-align: center;
     }
 
-    /* The canvas is pinned in the viewport across a tall scroll region, so it
-       stays centered while the scroll drives the zoom to full size — the page
-       only scrolls past it once the zoom is done.
+    /* The canvas is fixed and centered; scroll drives its physical size from a
+       small centered tube up to the full viewport (the box grows and gains
+       glyph cells — it does not magnify). The empty .scroll-region just gives
+       the page the scroll length that drives the growth.
        The tube distortion (fisheye, scanlines, vignette, black mask) is all in
        the WebGL shader — the page is just black behind the canvas. */
     .scroll-region { height: 260vh; }
-    .pin {
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      display: grid;
-      place-items: center;
-      gap: 18px;
-    }
     canvas {
       display: block;
-      width: min(92vw, 900px);
-      height: auto;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
-    .hint { letter-spacing: 0.15em; text-transform: uppercase; }
+    .hint {
+      position: fixed;
+      bottom: 22px;
+      left: 0;
+      right: 0;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
   </style>
 </head>
 <body>
-  <div class="scroll-region">
-    <div class="pin">
-      <canvas id="tv"></canvas>
-      <p class="hint">move the mouse over the tube &middot; scroll to zoom in</p>
-    </div>
-  </div>
+  <canvas id="tv"></canvas>
+  <p class="hint">move the mouse over the tube &middot; scroll to grow</p>
+  <div class="scroll-region"></div>
 
   <script type="module">
     import { mountAsciiPlayer } from "./ascii-player.js";
