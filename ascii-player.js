@@ -1,93 +1,63 @@
-// Framework-free player for a colored-ASCII sequence (seq.json.gz).
-// The colored-ASCII grid is drawn to an offscreen 2D canvas (one glyph per
-// cell, colored by the source pixel — a pixelated image made of characters),
-// then a WebGL pass warps it like a CRT tube: barrel bulge, black tube mask,
-// scanlines and a soft vignette, all on a black background. No deps.
+// Framework-free realtime colored-ASCII video player (WebGL, no deps).
+//
+// A live <video> is decoded straight to a GL texture every frame. The ASCII
+// mapping happens IN the fragment shader: each screen cell samples the video's
+// luminance, picks a glyph from a baked monospace atlas, and tints it by the
+// source pixel color (colored ASCII). The same pass bends everything like a CRT
+// tube — fisheye barrel, a soft mouse-warp trail, chromatic aberration, glyph
+// glow, scanlines, vignette and a power-on flash — plus scroll-driven zoom.
 //
 //   import { mountAsciiPlayer } from "./ascii-player.js";
-//   mountAsciiPlayer(canvas, "seq.json.gz");
+//   mountAsciiPlayer(canvas, "sample.mp4");
 
-export async function mountAsciiPlayer(canvas, seqUrl, opts = {}) {
-  const {
-    cellW = 5, // px per cell horizontally (smaller = more pixel-like)
-    cellH = 8, // px per cell vertically (also font px)
-    font, // override the monospace font shorthand
-    loop = true,
-    background = "#000000",
-    barrel = 0.12, // tube bulge strength
-    scanline = 0.16, // scanline darkening depth
-    vignette = 0.4, // corner darkening
-  } = opts;
+const TRAIL_MAX = 12;
 
-  const seq = await loadSequence(seqUrl);
-  const { cols, rows, fps, frames } = seq;
-  const rgb = frames.map((f) => base64ToBytes(f.rgb));
+export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
+  const p = {
+    internalW: 1024, // internal render width (px); height follows video aspect
+    cell: 6, // glyph cell size in internal px (smaller = denser)
+    contrast: 1.15,
+    brightness: 0.0, // additive, -1..1
+    fisheye: 0.18, // barrel bulge strength
+    mouseRadius: 120, // px falloff of the mouse warp
+    mouseStrength: 34, // px displacement at the mouse
+    trailDecay: 0.9, // per-frame decay of trailing warp points
+    chroma: 2.0, // px RGB split
+    glow: 0.5, // additive glyph glow
+    scanline: 0.14,
+    vignette: 0.35,
+    zoomPerScroll: 0.25, // extra zoom at full page scroll
+    glyphChars: "@#W$9876543210?!abc;:+=-,._  ",
+    background: "#000000",
+    ...opts,
+  };
 
-  const dpr = Math.max(1, Math.ceil(window.devicePixelRatio || 1));
-  const w = cols * cellW * dpr;
-  const h = rows * cellH * dpr;
+  const video = document.createElement("video");
+  video.muted = true; // property + attribute: some browsers need the attribute for autoplay
+  video.setAttribute("muted", "");
+  video.loop = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.crossOrigin = "anonymous";
+  video.style.display = "none";
+  document.body.appendChild(video);
+  video.addEventListener("error", () => {
+    const e = video.error;
+    console.error(`ascii-tv: video failed to load "${videoSrc}"`, e && e.message);
+    if (opts.onError) opts.onError(e);
+  });
+  video.src = videoSrc;
 
-  // --- offscreen 2D: the raw colored-ASCII render ------------------------
-  const off = document.createElement("canvas");
-  off.width = w;
-  off.height = h;
-  const ctx = off.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.font = font ?? `700 ${cellH}px Menlo, Monaco, "Courier New", monospace`;
-  ctx.textBaseline = "top";
-
-  function drawAscii(idx) {
-    const chars = frames[idx].c;
-    const px = rgb[idx];
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, cols * cellW, rows * cellH);
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const i = y * cols + x;
-        const o = i * 3;
-        ctx.fillStyle = `rgb(${px[o]},${px[o + 1]},${px[o + 2]})`;
-        ctx.fillText(chars[i], x * cellW, y * cellH);
-      }
-    }
-  }
-
-  // --- WebGL tube pass ---------------------------------------------------
-  canvas.width = w;
-  canvas.height = h;
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false });
   if (gl == null) throw new Error("WebGL unavailable");
 
-  const vsrc = `
-    attribute vec2 a_pos;
-    varying vec2 v_uv;
-    void main() {
-      v_uv = a_pos * 0.5 + 0.5;
-      gl_Position = vec4(a_pos, 0.0, 1.0);
-    }`;
-  const fsrc = `
-    precision mediump float;
-    varying vec2 v_uv;
-    uniform sampler2D u_tex;
-    uniform float u_barrel, u_scan, u_vig, u_rows;
-    void main() {
-      vec2 c = v_uv - 0.5;
-      float r2 = dot(c, c);
-      // barrel bulge: push samples outward with radius^2
-      vec2 uv = v_uv + c * u_barrel * r2;
-      // tube mask: nothing outside the curved raster -> black
-      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-        return;
-      }
-      vec3 col = texture2D(u_tex, uv).rgb;
-      // scanlines
-      col *= 1.0 - u_scan * (0.5 + 0.5 * cos(uv.y * u_rows * 6.28318));
-      // vignette
-      col *= mix(1.0 - u_vig, 1.0, smoothstep(0.75, 0.15, r2));
-      gl_FragColor = vec4(col, 1.0);
-    }`;
+  const glyphTex = makeGlyphAtlas(gl, p.glyphChars);
+  const videoTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, videoTex);
+  clampLinear(gl);
 
-  const prog = linkProgram(gl, vsrc, fsrc);
+  const prog = linkProgram(gl, VSRC, fsrc(TRAIL_MAX));
   gl.useProgram(prog);
 
   const buf = gl.createBuffer();
@@ -97,48 +67,249 @@ export async function mountAsciiPlayer(canvas, seqUrl, opts = {}) {
   gl.enableVertexAttribArray(aPos);
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // 2D canvas is top-left origin
+  const u = (name) => gl.getUniformLocation(prog, name);
+  const U = {
+    res: u("u_res"),
+    videoRes: u("u_video_res"),
+    cell: u("u_cell"),
+    contrast: u("u_contrast"),
+    brightness: u("u_brightness"),
+    fisheye: u("u_fisheye"),
+    mouseRadius: u("u_mouse_radius"),
+    chroma: u("u_chroma"),
+    glow: u("u_glow"),
+    scan: u("u_scan"),
+    vig: u("u_vig"),
+    zoom: u("u_zoom"),
+    flash: u("u_flash"),
+    glyphCount: u("u_glyph_count"),
+    trailCount: u("u_trail_count"),
+    trail: u("u_trail"), // vec3[]: (uv.x, uv.y, strength)
+  };
+  gl.uniform1i(u("u_video"), 0);
+  gl.uniform1i(u("u_glyph"), 1);
+  gl.uniform1f(U.cell, p.cell);
+  gl.uniform1f(U.contrast, p.contrast);
+  gl.uniform1f(U.brightness, p.brightness);
+  gl.uniform1f(U.fisheye, p.fisheye);
+  gl.uniform1f(U.mouseRadius, p.mouseRadius);
+  gl.uniform1f(U.chroma, p.chroma);
+  gl.uniform1f(U.glow, p.glow);
+  gl.uniform1f(U.scan, p.scanline);
+  gl.uniform1f(U.vig, p.vignette);
+  gl.uniform1f(U.glyphCount, p.glyphChars.length);
 
-  gl.uniform1f(gl.getUniformLocation(prog, "u_barrel"), barrel);
-  gl.uniform1f(gl.getUniformLocation(prog, "u_scan"), scanline);
-  gl.uniform1f(gl.getUniformLocation(prog, "u_vig"), vignette);
-  gl.uniform1f(gl.getUniformLocation(prog, "u_rows"), rows);
-  gl.viewport(0, 0, w, h);
+  // --- interaction: mouse-warp trail + scroll zoom -----------------------
+  const trail = []; // {x, y, s} in uv space
+  canvas.addEventListener("pointermove", (e) => {
+    const r = canvas.getBoundingClientRect();
+    // y is flipped: pointer is top-down, shader v_uv.y is bottom-up
+    trail.unshift({ x: (e.clientX - r.left) / r.width, y: 1 - (e.clientY - r.top) / r.height, s: p.mouseStrength });
+    if (trail.length > TRAIL_MAX) trail.pop();
+  });
+  let zoom = 1;
+  const onScroll = () => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const prog = max > 0 ? window.scrollY / max : 0;
+    zoom = 1 + prog * p.zoomPerScroll;
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
 
-  function render(idx) {
-    drawAscii(idx);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, off);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  }
+  // --- size to the video once we know its dimensions ---------------------
+  let ready = false;
+  let flashStart = 0;
+  video.addEventListener("loadedmetadata", () => {
+    const aspect = video.videoWidth / video.videoHeight;
+    canvas.width = p.internalW;
+    canvas.height = Math.round(p.internalW / aspect);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(U.res, canvas.width, canvas.height);
+    gl.uniform2f(U.videoRes, video.videoWidth, video.videoHeight);
+    ready = true;
+    if (video.paused) video.currentTime = 0.05; // force one decoded frame if autoplay is blocked
+  });
+  const tryPlay = () => video.play().catch(() => {}); // muted autoplay; retry on gesture
+  tryPlay();
+  video.addEventListener("canplay", tryPlay);
+  window.addEventListener("pointerdown", tryPlay, { once: true });
 
-  const frameDur = 1000 / fps;
-  let start = null;
-  let last = -1;
+  const bg = hexToRgb(p.background);
+  gl.clearColor(bg[0], bg[1], bg[2], 1);
 
   function tick(now) {
-    if (start === null) start = now;
-    let idx = Math.floor((now - start) / frameDur);
-    if (idx >= frames.length) {
-      if (!loop) return;
-      start = now;
-      idx = 0;
-    }
-    if (idx !== last) {
-      render(idx);
-      last = idx;
+    if (ready && video.readyState >= 2) {
+      if (flashStart === 0) flashStart = now; // ramp on the first real frame, not an event
+
+      // decay + upload the mouse-warp trail
+      const flat = new Float32Array(TRAIL_MAX * 3);
+      for (let i = 0; i < trail.length; i++) {
+        trail[i].s *= p.trailDecay;
+        flat[i * 3] = trail[i].x;
+        flat[i * 3 + 1] = trail[i].y;
+        flat[i * 3 + 2] = trail[i].s;
+      }
+      while (trail.length && trail[trail.length - 1].s < 0.5) trail.pop();
+      gl.uniform3fv(U.trail, flat);
+      gl.uniform1i(U.trailCount, trail.length);
+      gl.uniform1f(U.zoom, zoom);
+
+      const flash = flashStart ? Math.min(1, (now - flashStart) / 450) : 0;
+      gl.uniform1f(U.flash, flash);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, videoTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      uploadVideo(gl, video);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, glyphTex);
+
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
 
-  return { seq };
+  return { video };
+}
+
+// Upload the current video frame. Chrome takes the fast element-upload path;
+// Safari throws "Failed to Decode Data" on texImage2D(video), so on the first
+// failure we fall back to drawing the frame to a 2D canvas and uploading raw
+// pixels (a per-frame CPU readback — slower, but universally supported).
+let readbackCanvas = null;
+function uploadVideo(gl, video) {
+  if (!readbackCanvas) {
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+      return;
+    } catch {
+      readbackCanvas = document.createElement("canvas");
+    }
+  }
+  const c = readbackCanvas;
+  if (c.width !== video.videoWidth) { c.width = video.videoWidth; c.height = video.videoHeight; }
+  const ctx = c.getContext("2d");
+  ctx.drawImage(video, 0, 0);
+  const px = new Uint8Array(ctx.getImageData(0, 0, c.width, c.height).data.buffer);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, c.width, c.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+}
+
+// --- glyph atlas: dark->light ramp baked to a 1-row texture --------------
+function makeGlyphAtlas(gl, chars, glyphSize = 48) {
+  const c = document.createElement("canvas");
+  c.width = chars.length * glyphSize;
+  c.height = glyphSize;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `700 ${Math.floor(glyphSize * 0.78)}px Menlo, Monaco, "Courier New", monospace`;
+  for (let i = 0; i < chars.length; i++) {
+    ctx.fillText(chars[i], i * glyphSize + glyphSize * 0.5, glyphSize * 0.54);
+  }
+  // Upload raw pixels, not the canvas element — Safari throws "Failed to Decode
+  // Data" on texImage2D from a 2D canvas.
+  const px = new Uint8Array(ctx.getImageData(0, 0, c.width, c.height).data.buffer);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, c.width, c.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  clampLinear(gl);
+  return tex;
+}
+
+function clampLinear(gl) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+}
+
+const VSRC = `
+  attribute vec2 a_pos;
+  varying vec2 v_uv;
+  void main() {
+    v_uv = a_pos * 0.5 + 0.5;
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+  }`;
+
+function fsrc(trailMax) {
+  return `
+  precision highp float;
+  varying vec2 v_uv;
+  uniform sampler2D u_video;
+  uniform sampler2D u_glyph;
+  uniform vec2 u_res, u_video_res;
+  uniform float u_cell, u_contrast, u_brightness, u_fisheye;
+  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash;
+  uniform float u_glyph_count;
+  uniform int u_trail_count;
+  uniform vec3 u_trail[${trailMax}];
+
+  // cover-fit the video into the canvas box
+  vec2 coverUV(vec2 uv) {
+    float src = u_video_res.x / u_video_res.y;
+    float dst = u_res.x / u_res.y;
+    if (dst > src) { float s = src / dst; uv.y = uv.y * s + (1.0 - s) * 0.5; }
+    else           { float s = dst / src; uv.x = uv.x * s + (1.0 - s) * 0.5; }
+    return uv;
+  }
+
+  // fisheye barrel + scroll zoom + mouse-warp trail, all in screen space
+  vec2 warp(vec2 uv) {
+    uv = (uv - 0.5) / u_zoom + 0.5;
+    vec2 c = uv - 0.5;
+    uv += c * u_fisheye * dot(c, c);
+    for (int i = 0; i < ${trailMax}; i++) {
+      if (i >= u_trail_count) break;
+      vec2 d = (uv - u_trail[i].xy) * u_res;   // px offset from trail point
+      float f = exp(-dot(d, d) / (u_mouse_radius * u_mouse_radius));
+      uv += normalize(uv - u_trail[i].xy + 1e-5) * f * u_trail[i].z / u_res;
+    }
+    return uv;
+  }
+
+  vec3 sampleVideo(vec2 sc) {
+    vec2 uv = coverUV(sc);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec3(0.0);
+    return texture2D(u_video, uv).rgb;
+  }
+
+  void main() {
+    vec2 suv = warp(v_uv);
+    if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // black outside the tube
+      return;
+    }
+
+    vec2 grid = u_res / u_cell;
+    vec2 cellId = floor(suv * grid);
+    vec2 center = (cellId + 0.5) / grid;   // cell center in screen space
+    vec2 local = fract(suv * grid);        // 0..1 within the cell
+
+    // luminance -> glyph (dark maps to the dense '@' end of the ramp)
+    vec3 mid = sampleVideo(center);
+    float lum = dot(mid, vec3(0.299, 0.587, 0.114));
+    lum = clamp((lum - 0.5) * u_contrast + 0.5 + u_brightness, 0.0, 1.0);
+    float gi = floor((1.0 - lum) * (u_glyph_count - 1.0) + 0.5);
+    vec2 guv = vec2((gi + local.x) / u_glyph_count, local.y);
+    float mask = texture2D(u_glyph, guv).r;
+
+    // chromatic aberration on the tint color
+    vec2 ca = vec2(u_chroma / u_res.x, 0.0);
+    vec3 tint = vec3(sampleVideo(center + ca).r, mid.g, sampleVideo(center - ca).b);
+
+    vec3 col = tint * mask;
+    col += tint * mask * u_glow;                        // cheap glyph glow
+    col *= 1.0 - u_scan * (0.5 + 0.5 * cos(suv.y * grid.y * 6.28318)); // scanlines
+    float r2 = dot(suv - 0.5, suv - 0.5);
+    col *= mix(1.0 - u_vig, 1.0, smoothstep(0.75, 0.15, r2));          // vignette
+    col *= u_flash;                                     // power-on ramp
+
+    gl_FragColor = vec4(col, 1.0);
+  }`;
 }
 
 function linkProgram(gl, vsrc, fsrc) {
@@ -146,36 +317,18 @@ function linkProgram(gl, vsrc, fsrc) {
     const s = gl.createShader(type);
     gl.shaderSource(s, src);
     gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      throw new Error("shader: " + gl.getShaderInfoLog(s));
-    }
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error("shader: " + gl.getShaderInfoLog(s));
     return s;
   };
   const p = gl.createProgram();
   gl.attachShader(p, compile(gl.VERTEX_SHADER, vsrc));
   gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsrc));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    throw new Error("link: " + gl.getProgramInfoLog(p));
-  }
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error("link: " + gl.getProgramInfoLog(p));
   return p;
 }
 
-async function loadSequence(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`fetch ${url}: ${res.status}`);
-  // A static .gz fetched directly arrives as raw gzip bytes (no
-  // Content-Encoding), so inflate with the native stream. If instead you serve
-  // it with `Content-Encoding: gzip` the browser inflates it for you — then
-  // drop this pipeThrough and read res.text() directly.
-  const stream = res.body.pipeThrough(new DecompressionStream("gzip"));
-  const text = await new Response(stream).text();
-  return JSON.parse(text);
-}
-
-function base64ToBytes(b64) {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }

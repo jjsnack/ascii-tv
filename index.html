@@ -5,29 +5,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ASCII TV</title>
   <style>
+    :root { color-scheme: dark; }
     body {
       margin: 0;
-      min-height: 100vh;
       background: #000;
-      display: grid;
-      place-items: center;
+      color: #6a6a6a;
+      font: 13px/1.6 Menlo, Monaco, "Courier New", monospace;
+      text-align: center;
     }
 
-    /* The tube distortion (barrel, scanlines, vignette, black mask) is done in
+    /* The tube distortion (fisheye, scanlines, vignette, black mask) is all in
        the WebGL shader — the page is just black behind the canvas. */
+    .stage {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      gap: 18px;
+    }
     canvas {
       display: block;
       width: min(92vw, 900px);
       height: auto;
     }
+    .hint { letter-spacing: 0.15em; text-transform: uppercase; }
+    .scroll-note { padding: 40vh 0 60vh; opacity: 0.5; }
   </style>
 </head>
 <body>
-  <canvas id="tv"></canvas>
+  <div class="stage">
+    <canvas id="tv"></canvas>
+    <p class="hint">move the mouse over the tube &middot; scroll to zoom in</p>
+  </div>
+  <p class="scroll-note">&darr; keep scrolling &mdash; the picture zooms as you go &darr;</p>
 
   <script type="module">
     import { mountAsciiPlayer } from "./ascii-player.js";
-    mountAsciiPlayer(document.getElementById("tv"), "seq.json.gz");
+    // Pass a different clip with ?v=<url>, e.g. index.html?v=myclip.mp4
+    const src = new URLSearchParams(location.search).get("v") || "sample.mp4";
+    const hint = document.querySelector(".hint");
+    mountAsciiPlayer(document.getElementById("tv"), src, {
+      onError: () => { hint.textContent = "could not load video: " + src; },
+    });
   </script>
 </body>
 </html>

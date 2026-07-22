@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Serve this folder so index.html can play the sequence. http:// is required —
-# DecompressionStream('gzip') refuses file://. Usage: ./serve.sh [port] (8000).
+# Serve this folder so index.html runs. http:// is required — ES modules and
+# the <video> texture upload both refuse file://. Usage: ./serve.sh [port] (8000).
 set -euo pipefail
 cd "$(dirname "$0")"
 port="${1:-8000}"

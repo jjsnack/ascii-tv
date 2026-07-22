@@ -1,38 +1,26 @@
 # ascii-tv
 
-Convert an `mp4` into a portable **colored-ASCII sequence**, then play it in any
-static website on a canvas with a CSS CRT look.
+Turn any `<video>` into **realtime colored ASCII** on a canvas, warped like a
+CRT tube. Framework-free, zero deps — one WebGL pass does the whole thing.
 
-Pipeline is a single ffmpeg pipe + numpy. Player is framework-free (native gzip
-decode + canvas, zero deps).
+The video is decoded live to a GL texture every frame. The ASCII mapping runs
+in the fragment shader: each screen cell samples the video's luminance, picks a
+glyph from a baked monospace atlas, and tints it by the source pixel color. The
+same pass adds the tube look — fisheye barrel, a mouse-warp trail, chromatic
+aberration, glyph glow, scanlines, vignette, a power-on flash — and scroll zoom.
 
-## Pipeline
+No precompute step, no baked asset, any-length clip, interactive.
 
-Needs `ffmpeg`/`ffprobe` on PATH and [`uv`](https://docs.astral.sh/uv/). `numpy`
-is declared inline in `convert.py` ([PEP 723](https://peps.python.org/pep-0723/)),
-so uv installs it into a cached env automatically — no venv, no `pip install`.
-
-```sh
-./convert.sh in.mp4 seq.json.gz --cols 120 --fps 24
-./convert.sh --selftest   # sanity check, no ffmpeg needed
-```
-
-`convert.sh` is a thin wrapper over `uv run convert.py` (args pass through).
-
-Options: `--cols` (horizontal resolution, default 120), `--fps` (default 24),
-`--ramp` (dark→light char set, default `.:-=+*#%@`). `rows` is derived from the
-source aspect ratio.
-
-## Play it
+## Run the example
 
 ```sh
 ./serve.sh          # http://localhost:8000, then open index.html
 ./serve.sh 9000     # custom port
 ```
 
-http:// is required — the player's `DecompressionStream('gzip')` refuses
-`file://`. `index.html` is a complete example (CRT shell + player call, with a
-white-background toggle).
+http:// is required — ES modules and the `<video>` texture upload both refuse
+`file://`. `index.html` is a complete demo: move the mouse over the tube to warp
+it, scroll to zoom. It plays the bundled `sample.mp4`.
 
 ## Integrate into a site
 
@@ -40,40 +28,41 @@ white-background toggle).
 <canvas id="tv"></canvas>
 <script type="module">
   import { mountAsciiPlayer } from "./ascii-player.js";
-  mountAsciiPlayer(document.getElementById("tv"), "seq.json.gz");
+  mountAsciiPlayer(document.getElementById("tv"), "clip.mp4");
 </script>
 ```
 
-`mountAsciiPlayer(canvas, seqUrl, opts)` — opts: `cellW`, `cellH`, `font`,
-`loop`, `background`. Copy `ascii-player.js` and `seq.json.gz` into your site.
+Copy `ascii-player.js` and point it at any same-origin (or CORS-enabled) video.
+`mountAsciiPlayer(canvas, videoSrc, opts)` returns `{ video }`.
 
-The CRT scanlines / glow / vignette are pure CSS — see `index.html`, none of it
-is required for the ASCII itself.
+### Options
 
-## Sequence format (`seq.json.gz`)
+Every key is an `opts` field with the default shown — physical CRT knobs, tune
+to taste.
 
-Single gzipped JSON, row-major grids:
+| Key | Default | What |
+|---|---|---|
+| `internalW` | `1024` | internal render width in px; height follows video aspect |
+| `cell` | `6` | glyph cell size in px (smaller = denser ASCII) |
+| `contrast` | `1.15` | luminance contrast before glyph pick |
+| `brightness` | `0.0` | additive luminance, `-1..1` |
+| `fisheye` | `0.18` | barrel bulge strength |
+| `mouseRadius` | `120` | px falloff of the mouse warp |
+| `mouseStrength` | `34` | px displacement at the cursor |
+| `trailDecay` | `0.9` | per-frame decay of the warp trail |
+| `chroma` | `2.0` | px RGB split (chromatic aberration) |
+| `glow` | `0.5` | additive glyph glow |
+| `scanline` | `0.14` | scanline depth |
+| `vignette` | `0.35` | corner darkening |
+| `zoomPerScroll` | `0.25` | extra zoom at full page scroll |
+| `glyphChars` | `@#W$9876543210?!abc;:+=-,._` | dense→sparse ramp (index 0 = darkest pixel) |
+| `background` | `#000000` | clear color behind the tube |
 
-```json
-{
-  "cols": 120,
-  "rows": 34,
-  "fps": 24,
-  "ramp": " .:-=+*#%@",
-  "frames": [
-    { "c": "<rows*cols chars>", "rgb": "<base64 of rows*cols*3 bytes>" }
-  ]
-}
-```
+## Notes
 
-- `c` — char per cell, from luminance mapped onto `ramp`.
-- `rgb` — base64 of raw `Uint8` RGB triples, same cell order.
-
-Both char and rgb are stored so non-browser renderers (terminal/ANSI, print) can
-use the glyphs directly.
-
-### Size
-
-Roughly `cols·rows·4` bytes raw per frame before gzip. Fine for short clips (a
-few seconds at 120 cols ≈ ~40 KB/s gzipped). For long clips, switch to NDJSON
-streaming or delta-encode frames — not built yet.
+- **CORS**: cross-origin video needs `Access-Control-Allow-Origin` or the
+  texture upload taints and fails. Same-origin is simplest.
+- **Autoplay**: muted + `playsInline` so browsers allow it; a user gesture may
+  still be required on some mobile setups.
+- **Glow** is a cheap same-cell additive, not multi-pass bloom. Swap in a blur
+  framebuffer if you want a real halo.
