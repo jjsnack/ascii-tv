@@ -14,7 +14,7 @@ const TRAIL_MAX = 12;
 
 export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   const p = {
-    cell: 16, // glyph cell size in internal px (bigger = chunkier glyphs, fewer cells)
+    cell: 12, // glyph cell size in internal px (bigger = chunkier glyphs, fewer cells)
     contrast: 1.15,
     brightness: 0.12, // additive, -1..1
     fisheye: 0.25, // horizontal barrel bulge strength
@@ -28,6 +28,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     growStart: 0.42, // fraction of the viewport the tube fills before scrolling
     dprCap: 2, // clamp devicePixelRatio so huge/retina viewports don't over-render
     glyphChars: "@#W$9876543210?!abc;:+=-,._  ",
+    glyphFill: 1.15, // glyph size vs cell slot (higher = less black between glyphs)
     background: "#000000",
     ...opts,
   };
@@ -52,7 +53,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false });
   if (gl == null) throw new Error("WebGL unavailable");
 
-  const glyphTex = makeGlyphAtlas(gl, p.glyphChars);
+  const glyphTex = makeGlyphAtlas(gl, p.glyphChars, p.glyphFill);
   const videoTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, videoTex);
   clampLinear(gl);
@@ -205,7 +206,7 @@ function uploadVideo(gl, video) {
 }
 
 // --- glyph atlas: dark->light ramp baked to a 1-row texture --------------
-function makeGlyphAtlas(gl, chars, glyphSize = 72) {
+function makeGlyphAtlas(gl, chars, fill = 1.15, glyphSize = 72) {
   const c = document.createElement("canvas");
   c.width = chars.length * glyphSize;
   c.height = glyphSize;
@@ -215,9 +216,18 @@ function makeGlyphAtlas(gl, chars, glyphSize = 72) {
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = `700 ${Math.floor(glyphSize * 0.78)}px Menlo, Monaco, "Courier New", monospace`;
+  ctx.font = `700 ${Math.floor(glyphSize * fill)}px Menlo, Monaco, "Courier New", monospace`;
+  const xStretch = 1.4; // ponytail: Menlo advance ~0.6em; widen to fill the square slot
   for (let i = 0; i < chars.length; i++) {
-    ctx.fillText(chars[i], i * glyphSize + glyphSize * 0.5, glyphSize * 0.54);
+    const cx = i * glyphSize + glyphSize * 0.5;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(i * glyphSize, 0, glyphSize, glyphSize); // clip so wide glyphs don't bleed into neighbors
+    ctx.clip();
+    ctx.translate(cx, glyphSize * 0.54);
+    ctx.scale(xStretch, 1);
+    ctx.fillText(chars[i], 0, 0);
+    ctx.restore();
   }
   // Upload raw pixels, not the canvas element — Safari throws "Failed to Decode
   // Data" on texImage2D from a 2D canvas.
