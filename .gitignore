@@ -4,3 +4,5 @@ sample.mp4
 seq.json.gz
 .DS_Store
 .light-preview.html
+*.mov
+*.MOV

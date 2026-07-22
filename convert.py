@@ -30,17 +30,20 @@ DEFAULT_RAMP = ".:-=+*#%@"
 
 def probe_aspect(path: str) -> float:
     """width / height of the first video stream."""
+    # One value per line (nokey). split() drops the trailing blank line some
+    # containers (e.g. iPhone .MOV, which carries a second thumbnail video
+    # stream) append — the old csv `s=x` format produced "WxHx" and crashed.
     out = subprocess.run(
         [
             "ffprobe", "-v", "error",
             "-select_streams", "v:0",
             "-show_entries", "stream=width,height",
-            "-of", "csv=p=0:s=x",
+            "-of", "default=noprint_wrappers=1:nokey=1",
             path,
         ],
         capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    w, h = (int(n) for n in out.split("x"))
+    ).stdout.split()
+    w, h = int(out[0]), int(out[1])
     return w / h
 
 
