@@ -14,7 +14,7 @@ const TRAIL_MAX = 12;
 
 export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   const p = {
-    cell: 12, // glyph cell size in internal px (bigger = chunkier glyphs, fewer cells)
+    cell: 16, // glyph cell size in internal px (bigger = chunkier glyphs, fewer cells)
     contrast: 1.15,
     brightness: 0.12, // additive, -1..1
     fisheye: 0.25, // horizontal barrel bulge strength
