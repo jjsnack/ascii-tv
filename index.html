@@ -8,135 +8,26 @@
     body {
       margin: 0;
       min-height: 100vh;
-      background: #0a0a0a;
+      background: #000;
       display: grid;
       place-items: center;
     }
 
-    /* ---- CRT shell (CSS + one SVG warp filter) ----------------------- */
-    /* Cabinet: thick bottom bezel like a period set. */
-    .tv {
-      padding: 4.5vmin 4vmin 6.5vmin;
-      border-radius: 4vmin;
-      background: radial-gradient(120% 150% at 50% 0%, #2c2c2c, #141414 55%, #0b0b0b);
-      box-shadow: 0 2.5vmin 7vmin rgba(0, 0, 0, 0.75), inset 0 0 3vmin rgba(0, 0, 0, 0.6);
-    }
-
-    /* Screen: 4:3 tube, strongly curved corners, geometric edge warp. */
-    .screen {
-      position: relative;
-      width: min(88vw, 680px);
-      aspect-ratio: 4 / 3;
-      overflow: hidden;
-      border-radius: 12% / 16%;
-      background: #020402;
-      filter: url(#crtWarp);
-      box-shadow:
-        inset 0 0 4.5vmin rgba(0, 0, 0, 0.75),
-        inset 0 0 1.2vmin rgba(0, 0, 0, 0.7),
-        0 0 0 0.4vmin #000;
-    }
-
-    /* Overscan: the picture is blown up past the bezel so the edges crop,
-       the way a real CRT never showed the full raster. */
-    .screen canvas {
-      position: absolute;
-      inset: -6%;
-      width: 112%;
-      height: 112%;
-      object-fit: cover;
-    }
-
-    /* white-background mode: whole page + cabinet + screen go white,
-       CRT chrome softened */
-    body.light { background: #fff; }
-    body.light .tv { background: #fff; box-shadow: none; }
-    body.light .screen {
-      background: #fff;
-      box-shadow: inset 0 0 4vmin rgba(0, 0, 0, 0.25), 0 0 0 0.4vmin #ccc;
-    }
-    body.light .screen::before { opacity: 0.25; }
-    body.light .screen::after {
-      background: radial-gradient(130% 110% at 50% 45%, transparent 62%, rgba(0, 0, 0, 0.28) 100%);
-    }
-    body.light .bg-toggle { color: #111; }
-
-    .bg-toggle {
-      margin-top: 1rem;
-      padding: 0;
-      border: none;
-      background: none;
-      color: #eee;
-      cursor: pointer;
-      font: 700 0.8rem/1 monospace;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-
-    /* scanlines */
-    .screen::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 2;
-      background: repeating-linear-gradient(
-        to bottom,
-        rgba(0, 0, 0, 0) 0,
-        rgba(0, 0, 0, 0) 1px,
-        rgba(0, 0, 0, 0.35) 1px,
-        rgba(0, 0, 0, 0.35) 2px
-      );
-    }
-
-    /* vignette (curved corner darkening) + glass highlight + flicker */
-    .screen::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 3;
-      background:
-        radial-gradient(135% 115% at 50% 45%, transparent 58%, rgba(0, 0, 0, 0.62) 100%),
-        radial-gradient(55% 35% at 50% 8%, rgba(255, 255, 255, 0.09), transparent 60%);
-      animation: flicker 0.15s infinite;
-    }
-    @keyframes flicker {
-      0%   { opacity: 0.92; }
-      50%  { opacity: 1; }
-      100% { opacity: 0.94; }
+    /* The tube distortion (barrel, scanlines, vignette, black mask) is done in
+       the WebGL shader — the page is just black behind the canvas. */
+    canvas {
+      display: block;
+      width: min(92vw, 900px);
+      height: auto;
     }
   </style>
 </head>
 <body>
-  <!-- Geometric edge warp: low-frequency noise displaces the picture so the
-       corners bow like real tube glass. Kept subtle (small scale). -->
-  <svg class="crt-defs" width="0" height="0" aria-hidden="true">
-    <filter id="crtWarp" x="-15%" y="-15%" width="130%" height="130%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.0012 0.0018" numOctaves="2" seed="9" result="warp" />
-      <feDisplacementMap in="SourceGraphic" in2="warp" scale="11" xChannelSelector="R" yChannelSelector="G" />
-    </filter>
-  </svg>
-
-  <div class="tv">
-    <div class="screen">
-      <canvas id="tv"></canvas>
-    </div>
-  </div>
-  <button class="bg-toggle" type="button">white bg</button>
+  <canvas id="tv"></canvas>
 
   <script type="module">
     import { mountAsciiPlayer } from "./ascii-player.js";
-    const player = await mountAsciiPlayer(document.getElementById("tv"), "seq.json.gz");
-
-    const btn = document.querySelector(".bg-toggle");
-    let light = false;
-    btn.addEventListener("click", () => {
-      light = !light;
-      document.body.classList.toggle("light", light);
-      player.setBackground(light ? "#ffffff" : "#020402");
-      btn.textContent = light ? "dark bg" : "white bg";
-    });
+    mountAsciiPlayer(document.getElementById("tv"), "seq.json.gz");
   </script>
 </body>
 </html>

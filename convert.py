@@ -21,11 +21,11 @@ import sys
 
 import numpy as np
 
-# dark -> light. Space = darkest so blank cells render nothing in the player.
-# No leading space: the darkest cells get a real glyph (drawn in their near-black
-# RGB) instead of an empty cell, so dark regions read as black text on a light
-# background — not the page showing through. On a dark screen they stay ~invisible.
-DEFAULT_RAMP = ".:-=+*#%@"
+# dark -> light, weighted toward dense glyphs so every cell reads as a filled
+# "pixel" and the per-cell RGB color carries the image (pixelated look, not
+# sparse ascii). No space/light chars: darkest cells still get a glyph, drawn in
+# their near-black RGB — invisible on the black screen, visible on light.
+DEFAULT_RAMP = "-=+*csoxSXO#%@"
 
 
 def probe_aspect(path: str) -> float:
