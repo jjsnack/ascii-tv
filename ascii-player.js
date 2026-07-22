@@ -19,7 +19,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     brightness: 0.12, // additive, -1..1
     fisheye: 0.25, // horizontal barrel bulge strength
     fisheyeY: 0.55, // vertical bulge — higher = more curve on top/bottom edges
-    mouseRadius: 40, // px falloff of the mouse warp
+    mouseRadius: 110, // px falloff of the mouse warp
     mouseStrength: 15, // px displacement at the mouse
     chroma: 2.0, // px RGB split
     glow: 0.7, // additive glyph glow
@@ -112,6 +112,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   });
   canvas.addEventListener("pointerleave", () => { mouse.on = false; });
   gl.uniform1f(U.zoom, 1.0); // growth is physical (canvas size), not shader magnify
+  let growScale = p.growStart; // current box size as a fraction of the viewport
 
   // --- scroll grows the canvas box from growStart*viewport to full viewport,
   // and the internal resolution tracks the box so the glyph grid gains cells
@@ -120,6 +121,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     const max = document.documentElement.scrollHeight - window.innerHeight;
     const t = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
     const scale = p.growStart + t * (1 - p.growStart);
+    growScale = scale; // bigger box -> bigger mouse warp radius & strength
     const cssW = Math.round(window.innerWidth * scale);
     const cssH = Math.round(window.innerHeight * scale);
     canvas.style.width = cssW + "px";
@@ -155,8 +157,10 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     if (ready && video.readyState >= 2) {
       if (flashStart === 0) flashStart = now; // ramp on the first real frame, not an event
 
-      // one warp point, pinned exactly under the cursor
-      gl.uniform3f(U.trail, mouse.x, mouse.y, p.mouseStrength);
+      // one warp point, pinned exactly under the cursor; radius & strength
+      // scale with the box so a small tube warps gently, a full one strongly
+      gl.uniform1f(U.mouseRadius, p.mouseRadius * growScale);
+      gl.uniform3f(U.trail, mouse.x, mouse.y, p.mouseStrength * growScale);
       gl.uniform1i(U.trailCount, mouse.on ? 1 : 0);
 
       const flash = flashStart ? Math.min(1, (now - flashStart) / 450) : 0;
