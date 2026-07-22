@@ -85,6 +85,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     zoom: u("u_zoom"),
     fit: u("u_fit"),
     pixels: u("u_pixels"),
+    bg: u("u_bg"),
     flash: u("u_flash"),
     glyphCount: u("u_glyph_count"),
     trailCount: u("u_trail_count"),
@@ -159,8 +160,12 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   video.addEventListener("canplay", tryPlay);
   window.addEventListener("pointerdown", tryPlay, { once: true });
 
-  const bg = hexToRgb(p.background);
-  gl.clearColor(bg[0], bg[1], bg[2], 1);
+  const setBackground = (hex) => {
+    const c = hexToRgb(hex);
+    gl.clearColor(c[0], c[1], c[2], 1);
+    gl.uniform3f(U.bg, c[0], c[1], c[2]);
+  };
+  setBackground(p.background);
 
   function tick(now) {
     if (ready && video.readyState >= 2) {
@@ -188,7 +193,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   }
   requestAnimationFrame(tick);
 
-  return { video };
+  return { video, setBackground };
 }
 
 // Upload the current video frame. Chrome takes the fast element-upload path;
@@ -270,6 +275,7 @@ function fsrc(trailMax) {
   uniform sampler2D u_video;
   uniform sampler2D u_glyph;
   uniform vec2 u_res, u_video_res;
+  uniform vec3 u_bg;
   uniform float u_cell, u_contrast, u_brightness, u_fisheye, u_fisheye_y;
   uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit, u_pixels;
   uniform float u_glyph_count;
@@ -311,7 +317,7 @@ function fsrc(trailMax) {
   void main() {
     vec2 suv = warp(v_uv);
     if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
-      gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // black outside the tube
+      gl_FragColor = vec4(u_bg, 1.0); // background outside the tube
       return;
     }
 
@@ -333,12 +339,17 @@ function fsrc(trailMax) {
     vec2 ca = vec2(u_chroma / u_res.x, 0.0);
     vec3 tint = vec3(sampleVideo(center + ca).r, mid.g, sampleVideo(center - ca).b);
 
-    vec3 col = tint * mask;
-    col += tint * mask * u_glow;                        // cheap glyph glow
-    col *= 1.0 - u_scan * (0.5 + 0.5 * cos(suv.y * grid.y * 6.28318)); // scanlines
+    // composite glyphs over the background: coverage = mask, dimmed by
+    // scanlines; blends to u_bg so a white bg shows colored glyphs on paper
+    // and a black bg keeps the emissive CRT look (identical to bg = black).
+    vec3 ink = tint * (1.0 + u_glow);                                  // glyph color + glow
+    vec2 cuv = coverUV(center);                                        // letterbox test
+    float inFrame = step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
+    float a = inFrame * mask * (1.0 - u_scan * (0.5 + 0.5 * cos(suv.y * grid.y * 6.28318))); // scanlines
+    vec3 col = mix(u_bg, ink, a);
     float r2 = dot(suv - 0.5, suv - 0.5);
-    col *= mix(1.0 - u_vig, 1.0, smoothstep(0.75, 0.15, r2));          // vignette
-    col *= u_flash;                                     // power-on ramp
+    col = mix(u_bg, col, mix(1.0 - u_vig, 1.0, smoothstep(0.75, 0.15, r2))); // vignette
+    col = mix(u_bg, col, u_flash);                                     // power-on ramp
 
     gl_FragColor = vec4(col, 1.0);
   }`;

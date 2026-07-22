@@ -13,6 +13,22 @@
       font: 13px/1.6 Menlo, Monaco, "Courier New", monospace;
       text-align: center;
     }
+    body.light { background: #fff; color: #888; }
+    .bg-toggle {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 1;
+      font: inherit;
+      color: inherit;
+      background: transparent;
+      border: 1px solid currentColor;
+      border-radius: 3px;
+      padding: 4px 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
 
     /* The canvas is fixed and centered; scroll drives its physical size from a
        small centered tube up to the full viewport (the box grows and gains
@@ -39,6 +55,7 @@
   </style>
 </head>
 <body>
+  <button class="bg-toggle" id="bg-toggle">bg</button>
   <canvas id="tv"></canvas>
   <p class="hint">move the mouse over the tube &middot; scroll to grow &middot; press P for pixels</p>
   <div class="scroll-region"></div>
@@ -48,8 +65,12 @@
     // Pass a different clip with ?v=<url>, e.g. index.html?v=myclip.mp4
     const src = new URLSearchParams(location.search).get("v") || "sample.mp4";
     const hint = document.querySelector(".hint");
-    mountAsciiPlayer(document.getElementById("tv"), src, {
+    const tv = mountAsciiPlayer(document.getElementById("tv"), src, {
       onError: () => { hint.textContent = "could not load video: " + src; },
+    });
+    document.getElementById("bg-toggle").addEventListener("click", () => {
+      const light = document.body.classList.toggle("light");
+      tv.setBackground(light ? "#ffffff" : "#000000");
     });
   </script>
 </body>
