@@ -3,6 +3,8 @@
 Turn any `<video>` into **realtime colored ASCII** on a canvas, warped like a
 CRT tube. Framework-free, zero deps — one WebGL pass does the whole thing.
 
+**[Live demo →](https://jjsnack.github.io/ascii-tv/)**
+
 The video is decoded live to a GL texture every frame. The ASCII mapping runs
 in the fragment shader: each screen cell samples the video's luminance, picks a
 glyph from a baked monospace atlas, and tints it by the source pixel color. The
