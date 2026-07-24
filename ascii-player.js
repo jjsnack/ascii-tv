@@ -386,7 +386,7 @@ function fsrc(trailMax) {
     // so the core fully scrambles and only the rim probabilistically flickers.
     float fuzz = 0.0, t = 0.0;
     if (u_trail_count > 0 && u_pixels < 0.5) {
-      vec2 d = (suv - u_trail[0].xy) * u_res;
+      vec2 d = (center - u_trail[0].xy) * u_res; // cell center, not pixel: whole cell shares one fuzz value
       fuzz = exp(-dot(d, d) / (u_mouse_radius * u_mouse_radius)) * u_trail[0].z - 0.001;
       t = floor(u_time * 30.0);
       if (hash(cellId + t) < fuzz) gi = floor(hash(cellId * 1.7 + t) * u_glyph_count);
@@ -408,7 +408,7 @@ function fsrc(trailMax) {
     // pixel view: TV static under the cursor. cells flip to random speckle
     // (mostly grayscale, a little color), gated by a ragged non-circular falloff
     if (u_pixels > 0.5 && u_trail_count > 0) {
-      vec2 sd = (suv - u_trail[0].xy) * u_res;
+      vec2 sd = (center - u_trail[0].xy) * u_res; // cell center: whole cell toggles together
       float edge = 0.4 + 1.2 * hash(cellId + 1.0);
       float sf = exp(-dot(sd, sd) / (u_mouse_radius * u_mouse_radius) * edge) - 0.05; // floor kills stray rim cells
       float ts = floor(u_time * 24.0);
