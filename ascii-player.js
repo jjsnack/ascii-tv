@@ -144,9 +144,11 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     pixels = !pixels;
     gl.uniform1f(U.pixels, pixels ? 1 : 0);
     gl.uniform1f(U.cell, pixels ? p.pixelCell : p.cell); // finer grid in pixel view
+    if (opts.onPixels) opts.onPixels(pixels); // keep any UI label in sync across all triggers
+    return pixels;
   };
   window.addEventListener("keydown", (e) => { if (e.key === "p") togglePixels(); });
-  canvas.addEventListener("dblclick", togglePixels); // double-tap on touch (touch-action: manipulation kills the zoom-delay)
+  canvas.addEventListener("dblclick", togglePixels); // mouse; touch uses the px-toggle button
   let growScale = p.growStart; // current box size as a fraction of the viewport
 
   // --- scroll grows the canvas box from growStart*viewport to full viewport,
@@ -222,7 +224,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   }
   requestAnimationFrame(tick);
 
-  return { video, setBackground };
+  return { video, setBackground, togglePixels };
 }
 
 // Upload the current video frame. Chrome takes the fast element-upload path;
