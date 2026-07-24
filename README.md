@@ -8,14 +8,16 @@ CRT tube. Framework-free, zero deps — one WebGL pass does the whole thing.
 The video is decoded live to a GL texture every frame. The ASCII mapping runs
 in the fragment shader: each screen cell samples the video's luminance, picks a
 glyph from a baked monospace atlas, and tints it by the source pixel color. The
-same pass adds the tube look — fisheye barrel, a mouse-warp trail, chromatic
-aberration, glyph glow, scanlines, vignette, a power-on flash.
+same pass adds the tube look — fisheye barrel, a cursor fuzz that scrambles the
+glyphs under the pointer, chromatic aberration, glyph glow, scanlines, vignette,
+a power-on flash.
 
 Scroll grows the canvas from a small centered tube to a near-full-viewport
 rectangle (the glyph grid gains cells — it doesn't magnify), and the video fits
 contained at the top, cover-cropped by the bottom. As it grows the fisheye and a
 soft edge fade both ramp out, so the end frame is a flat, padded rectangle. Press
-**P** for raw pixel blocks.
+**P** (or double-tap on touch) for raw pixel blocks — a full CRT aperture-grille
+look, where the cursor throws digital glitch/static instead of glyph scramble.
 
 No precompute step, no baked asset, any-length clip, interactive.
 
@@ -29,8 +31,8 @@ No precompute step, no baked asset, any-length clip, interactive.
 
 Serves the folder and opens the browser at `index.html?v=<video>`. http:// is
 required — ES modules and the `<video>` texture upload both refuse `file://`.
-The demo: move the mouse to warp the tube, scroll to grow it, press **P** for
-pixels.
+The demo: move the cursor to scramble the glyphs, scroll to grow it, press **P**
+(or double-tap on touch) for pixels.
 
 ## Integrate into a site
 
@@ -44,7 +46,8 @@ Copy `ascii-player.js`, point it at any same-origin (or CORS-enabled) video:
 </script>
 ```
 
-`mountAsciiPlayer(canvas, videoSrc, opts)` returns `{ video }`. The scroll-grow
+`mountAsciiPlayer(canvas, videoSrc, opts)` returns `{ video, setBackground }`
+(`setBackground(hex)` swaps the clear color live). The scroll-grow
 effect needs a bit of page setup (fixed canvas + a tall scroll region) —
 see **[INTEGRATION.md](INTEGRATION.md)** for the full copy-paste.
 
@@ -54,15 +57,20 @@ Every key is an `opts` field with the default shown — tune to taste.
 
 | Key | Default | What |
 |---|---|---|
-| `cell` | `12` | glyph cell size in internal px (bigger = chunkier, fewer cells) |
+| `cell` | `16` | glyph cell size in internal px (bigger = chunkier, fewer cells) |
 | `glyphFill` | `1.15` | glyph size vs cell (higher = less black between glyphs) |
 | `glyphChars` | `@#W$9876543210?!abc;:+=-,._` | dense→sparse ramp (index 0 = darkest pixel) |
 | `contrast` | `1.15` | luminance contrast before glyph pick |
 | `brightness` | `0.12` | additive luminance, `-1..1` |
 | `fisheye` | `0.25` | horizontal barrel bulge |
 | `fisheyeY` | `0.55` | vertical bulge (top/bottom edges) |
-| `mouseRadius` | `110` | px falloff of the mouse warp (scales with box size) |
-| `mouseStrength` | `15` | px displacement at the cursor (scales with box size) |
+| `mouseRadius` | `70` | px falloff of the cursor fuzz, glyph view (scales with box size) |
+| `fuzzAmount` | `1.3` | glyph-scramble strength at the cursor (>1 = core fully scrambled, rim flickers) |
+| `pixelCell` | `12` | cell size in pixel view (smaller = higher resolution) |
+| `pixelContrast` | `1.05` | extra luminance contrast in pixel view |
+| `pixelBrightness` | `-0.05` | extra luminance in pixel view (negative = darker) |
+| `warpRadius` | `85` | px falloff of the cursor glitch/static, pixel view |
+| `warpStrength` | `10` | px block-tear displacement at the cursor, pixel view |
 | `chroma` | `2.0` | px RGB split (chromatic aberration) |
 | `glow` | `0.7` | additive glyph glow |
 | `scanline` | `0.14` | scanline depth |
@@ -85,4 +93,4 @@ Every key is an `opts` field with the default shown — tune to taste.
 
 ## Credits
 
-- [Revelatio Studio](https://revelatio.studio)
+Inspired by [Revelatio Studio](https://revelatio.studio) and such.
