@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>" />
   <title>ASCII TV</title>
   <style>
     :root { color-scheme: dark; }
@@ -14,11 +15,11 @@
     body {
       margin: 0;
       background: #000;
-      color: #6a6a6a;
+      color: #8a8a8a; /* >=4.5:1 on black for WCAG AA */
       font: 13px/1.6 Menlo, Monaco, "Courier New", monospace;
       text-align: center;
     }
-    body.light { background: #fff; color: #888; }
+    body.light { background: #fff; color: #666; } /* >=4.5:1 on white */
     .bg-toggle {
       position: fixed;
       top: 12px;
