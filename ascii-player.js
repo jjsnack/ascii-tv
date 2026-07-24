@@ -30,6 +30,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     glow: 0.7, // additive glyph glow
     scanline: 0.14,
     vignette: 0.35,
+    edgeShade: 0.45, // extra darkening toward the curved top/bottom tube edges (0 = off)
     edgeFade: 0.18, // width of the top/bottom fade-into-background border (viewport fraction); fades out as it zooms in
     edgeFadeX: 0.07, // width of the left/right fade (viewport fraction); smaller = less blur on the sides
     growStart: 0.42, // fraction of the viewport the tube fills before scrolling
@@ -90,6 +91,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     glow: u("u_glow"),
     scan: u("u_scan"),
     vig: u("u_vig"),
+    edgeShade: u("u_edge_shade"),
     edgeFade: u("u_edge_fade"),
     edgeFadeX: u("u_edge_fade_x"),
     zoom: u("u_zoom"),
@@ -116,6 +118,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   gl.uniform1f(U.glow, p.glow);
   gl.uniform1f(U.scan, p.scanline);
   gl.uniform1f(U.vig, p.vignette);
+  gl.uniform1f(U.edgeShade, p.edgeShade);
   gl.uniform1f(U.edgeFade, p.edgeFade);
   gl.uniform1f(U.edgeFadeX, p.edgeFadeX);
   gl.uniform1f(U.glyphCount, p.glyphChars.length);
@@ -144,9 +147,11 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     pixels = !pixels;
     gl.uniform1f(U.pixels, pixels ? 1 : 0);
     gl.uniform1f(U.cell, pixels ? p.pixelCell : p.cell); // finer grid in pixel view
+    if (opts.onPixels) opts.onPixels(pixels); // keep any UI label in sync across all triggers
+    return pixels;
   };
   window.addEventListener("keydown", (e) => { if (e.key === "p") togglePixels(); });
-  canvas.addEventListener("dblclick", togglePixels); // double-tap on touch (touch-action: manipulation kills the zoom-delay)
+  canvas.addEventListener("dblclick", togglePixels); // mouse; touch uses the px-toggle button
   let growScale = p.growStart; // current box size as a fraction of the viewport
 
   // --- scroll grows the canvas box from growStart*viewport to full viewport,
@@ -222,7 +227,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   }
   requestAnimationFrame(tick);
 
-  return { video, setBackground };
+  return { video, setBackground, togglePixels };
 }
 
 // Upload the current video frame. Chrome takes the fast element-upload path;
@@ -306,7 +311,7 @@ function fsrc(trailMax) {
   uniform vec2 u_res, u_video_res;
   uniform vec3 u_bg;
   uniform float u_cell, u_contrast, u_brightness, u_fisheye, u_fisheye_y;
-  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit, u_pixels, u_edge_fade, u_edge_fade_x;
+  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit, u_pixels, u_edge_fade, u_edge_fade_x, u_edge_shade;
   uniform float u_glyph_count, u_pixel_contrast, u_pixel_brightness;
   uniform int u_trail_count;
   uniform vec3 u_trail[${trailMax}];
@@ -438,6 +443,11 @@ function fsrc(trailMax) {
     vec3 col = mix(u_bg, ink, a);
     float r2 = dot(suv - 0.5, suv - 0.5);
     col = mix(u_bg, col, mix(1.0 - u_vig, 1.0, smoothstep(0.75, 0.15, r2))); // vignette
+
+    // extra shading toward the curved top/bottom edges (follows the warped tube,
+    // so it hugs the fisheye curve; fades with the bulge as it zooms flat)
+    float vy = abs(suv.y - 0.5) * 2.0;                       // 0 center -> 1 top/bottom
+    col = mix(col, u_bg, u_edge_shade * (1.0 - u_fit) * smoothstep(0.55, 1.0, vy));
 
     // rectangular edge fade into the background, on the canvas edges (v_uv, not
     // warped). Strong at the start, gone once zoomed to a full-viewport rect.

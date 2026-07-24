@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>" />
   <title>ASCII TV</title>
   <style>
@@ -35,6 +35,7 @@
       text-transform: uppercase;
       letter-spacing: 0.1em;
     }
+    #px-toggle { right: auto; left: 12px; } /* twin of bg-toggle, other corner */
 
     /* The canvas is fixed and centered; scroll drives its physical size from a
        small centered tube up to the full viewport (the box grows and gains
@@ -66,12 +67,16 @@
 </head>
 <body>
   <button class="bg-toggle" id="bg-toggle">bg</button>
+  <button class="bg-toggle" id="px-toggle">ascii</button>
   <canvas id="tv"></canvas>
   <p class="hint">move the mouse over the tube &middot; scroll to grow &middot; press P for pixels</p>
   <script>
     // touch devices: no mouse, no keyboard — swap the hint copy
     if (matchMedia("(pointer: coarse)").matches)
-      document.querySelector(".hint").textContent = "touch the tube · scroll to grow · double-tap for pixels";
+      document.querySelector(".hint").textContent = "touch the tube · scroll to grow · tap ascii/pixels";
+    // iOS Safari ignores maximum-scale — kill pinch-zoom via the gesture events
+    for (const ev of ["gesturestart", "gesturechange", "gestureend"])
+      document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
   </script>
   <div class="scroll-region"></div>
 
@@ -80,13 +85,18 @@
     // Pass a different clip with ?v=<url>, e.g. index.html?v=myclip.mp4
     const src = new URLSearchParams(location.search).get("v") || "sample.mp4";
     const hint = document.querySelector(".hint");
+    const pxBtn = document.getElementById("px-toggle");
+    const coarse = matchMedia("(pointer: coarse)").matches;
     const tv = mountAsciiPlayer(document.getElementById("tv"), src, {
       onError: () => { hint.textContent = "could not load video: " + src; },
+      onPixels: (on) => { pxBtn.textContent = on ? "pixels" : "ascii"; }, // fires for button, P key, double-tap
+      ...(coarse && { growEnd: 0.78 }), // leave room for hint + buttons on mobile
     });
     document.getElementById("bg-toggle").addEventListener("click", () => {
       const light = document.body.classList.toggle("light");
       tv.setBackground(light ? "#ffffff" : "#000000");
     });
+    pxBtn.addEventListener("click", () => tv.togglePixels());
   </script>
 </body>
 </html>
