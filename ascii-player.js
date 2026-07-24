@@ -130,19 +130,23 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     mouse.y = 1 - (e.clientY - r.top) / r.height; // pointer top-down, v_uv bottom-up
     mouse.on = true;
   });
-  canvas.addEventListener("pointerleave", () => { mouse.on = false; });
+  // touch has no pointerleave — clear the fuzz on lift/cancel so it doesn't stick
+  const clearMouse = () => { mouse.on = false; };
+  canvas.addEventListener("pointerleave", clearMouse);
+  canvas.addEventListener("pointerup", clearMouse);
+  canvas.addEventListener("pointercancel", clearMouse);
   gl.uniform1f(U.zoom, 1.0); // growth is physical (canvas size), not shader magnify
 
-  // press "p" to toggle raw pixel blocks (solid color per cell, no glyphs)
+  // toggle raw pixel blocks (solid color per cell): "p" key or double-tap/click
   let pixels = false;
   gl.uniform1f(U.pixels, 0);
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "p") {
-      pixels = !pixels;
-      gl.uniform1f(U.pixels, pixels ? 1 : 0);
-      gl.uniform1f(U.cell, pixels ? p.pixelCell : p.cell); // finer grid in pixel view
-    }
-  });
+  const togglePixels = () => {
+    pixels = !pixels;
+    gl.uniform1f(U.pixels, pixels ? 1 : 0);
+    gl.uniform1f(U.cell, pixels ? p.pixelCell : p.cell); // finer grid in pixel view
+  };
+  window.addEventListener("keydown", (e) => { if (e.key === "p") togglePixels(); });
+  canvas.addEventListener("dblclick", togglePixels); // double-tap on touch (touch-action: manipulation kills the zoom-delay)
   let growScale = p.growStart; // current box size as a fraction of the viewport
 
   // --- scroll grows the canvas box from growStart*viewport to full viewport,

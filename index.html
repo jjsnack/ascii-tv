@@ -49,6 +49,10 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
+      touch-action: manipulation; /* keep pan/scroll, drop double-tap zoom so dblclick toggles pixels */
+    }
+    @media (pointer: coarse) {
+      .bg-toggle { padding: 12px 16px; } /* >=44px tap target on touch */
     }
     .hint {
       position: fixed;
@@ -64,6 +68,11 @@
   <button class="bg-toggle" id="bg-toggle">bg</button>
   <canvas id="tv"></canvas>
   <p class="hint">move the mouse over the tube &middot; scroll to grow &middot; press P for pixels</p>
+  <script>
+    // touch devices: no mouse, no keyboard — swap the hint copy
+    if (matchMedia("(pointer: coarse)").matches)
+      document.querySelector(".hint").textContent = "touch the tube · scroll to grow · double-tap for pixels";
+  </script>
   <div class="scroll-region"></div>
 
   <script type="module">
