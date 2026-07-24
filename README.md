@@ -11,9 +11,11 @@ glyph from a baked monospace atlas, and tints it by the source pixel color. The
 same pass adds the tube look — fisheye barrel, a mouse-warp trail, chromatic
 aberration, glyph glow, scanlines, vignette, a power-on flash.
 
-Scroll grows the canvas from a small centered tube to the full viewport (the
-glyph grid gains cells — it doesn't magnify), and the video fits contained at
-the top, cover-cropped by the bottom. Press **P** for raw pixel blocks.
+Scroll grows the canvas from a small centered tube to a near-full-viewport
+rectangle (the glyph grid gains cells — it doesn't magnify), and the video fits
+contained at the top, cover-cropped by the bottom. As it grows the fisheye and a
+soft edge fade both ramp out, so the end frame is a flat, padded rectangle. Press
+**P** for raw pixel blocks.
 
 No precompute step, no baked asset, any-length clip, interactive.
 
