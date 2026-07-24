@@ -14,14 +14,14 @@ const TRAIL_MAX = 12;
 
 export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   const p = {
-    cell: 16, // glyph cell size in internal px (bigger = chunkier glyphs, fewer cells)
+    cell: 6, // glyph cell size in internal px (bigger = chunkier glyphs, fewer cells)
     contrast: 1.15,
     brightness: 0.12, // additive, -1..1
-    fisheye: 0.25, // horizontal barrel bulge strength
-    fisheyeY: 0.55, // vertical bulge — higher = more curve on top/bottom edges
+    fisheye: 0.38, // horizontal barrel bulge strength
+    fisheyeY: 0.78, // vertical bulge — higher = more curve on top/bottom edges
     mouseRadius: 70, // px falloff of the cursor fuzz (glyph view)
     fuzzAmount: 1.3, // scramble strength at the cursor center (>1 = core fully scrambled, rim flickers)
-    pixelCell: 12, // cell size in pixel view (smaller = higher resolution)
+    pixelCell: 8, // cell size in pixel view (smaller = higher resolution)
     pixelContrast: 1.05, // extra contrast in pixel view (multiplies around mid-gray)
     pixelBrightness: -0.05, // extra brightness in pixel view (negative = darker)
     warpRadius: 85, // px falloff of the cursor glitch/static (pixel view)
@@ -33,7 +33,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     edgeShade: 0.45, // extra darkening toward the curved top/bottom tube edges (0 = off)
     edgeFade: 0.18, // width of the top/bottom fade-into-background border (viewport fraction); fades out as it zooms in
     edgeFadeX: 0.07, // width of the left/right fade (viewport fraction); smaller = less blur on the sides
-    growStart: 0.42, // fraction of the viewport the tube fills before scrolling
+    growStart: 0.55, // fraction of the viewport the tube fills before scrolling
     growEnd: 0.9, // fraction it grows to when fully scrolled (< 1 leaves padding around each side)
     dprCap: 2, // clamp devicePixelRatio so huge/retina viewports don't over-render
     glyphChars: "@#W$9876543210?!abc;:+=-,._  ",
