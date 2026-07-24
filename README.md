@@ -77,3 +77,7 @@ Every key is an `opts` field with the default shown — tune to taste.
   still be required on some mobile setups.
 - **Glow** is a cheap same-cell additive, not multi-pass bloom. Swap in a blur
   framebuffer if you want a real halo.
+
+## Credits
+
+- [Revelatio Studio](https://revelatio.studio)
