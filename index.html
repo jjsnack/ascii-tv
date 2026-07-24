@@ -6,6 +6,11 @@
   <title>ASCII TV</title>
   <style>
     :root { color-scheme: dark; }
+    html, body {
+      scrollbar-width: none; /* Firefox — scroll still works, just no visible bar */
+      -ms-overflow-style: none;
+    }
+    html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; } /* Chrome/Safari — Safari scrolls <html>, so target both */
     body {
       margin: 0;
       background: #000;

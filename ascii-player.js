@@ -25,7 +25,10 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     glow: 0.7, // additive glyph glow
     scanline: 0.14,
     vignette: 0.35,
+    edgeFade: 0.18, // width of the top/bottom fade-into-background border (viewport fraction); fades out as it zooms in
+    edgeFadeX: 0.07, // width of the left/right fade (viewport fraction); smaller = less blur on the sides
     growStart: 0.42, // fraction of the viewport the tube fills before scrolling
+    growEnd: 0.9, // fraction it grows to when fully scrolled (< 1 leaves padding around each side)
     dprCap: 2, // clamp devicePixelRatio so huge/retina viewports don't over-render
     glyphChars: "@#W$9876543210?!abc;:+=-,._  ",
     glyphFill: 1.15, // glyph size vs cell slot (higher = less black between glyphs)
@@ -82,6 +85,8 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     glow: u("u_glow"),
     scan: u("u_scan"),
     vig: u("u_vig"),
+    edgeFade: u("u_edge_fade"),
+    edgeFadeX: u("u_edge_fade_x"),
     zoom: u("u_zoom"),
     fit: u("u_fit"),
     pixels: u("u_pixels"),
@@ -103,6 +108,8 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   gl.uniform1f(U.glow, p.glow);
   gl.uniform1f(U.scan, p.scanline);
   gl.uniform1f(U.vig, p.vignette);
+  gl.uniform1f(U.edgeFade, p.edgeFade);
+  gl.uniform1f(U.edgeFadeX, p.edgeFadeX);
   gl.uniform1f(U.glyphCount, p.glyphChars.length);
 
   // --- interaction: mouse warp (exact) + scroll-driven growth ------------
@@ -130,7 +137,7 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   function layout() {
     const max = document.documentElement.scrollHeight - window.innerHeight;
     const t = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
-    const scale = p.growStart + t * (1 - p.growStart);
+    const scale = p.growStart + t * (p.growEnd - p.growStart);
     growScale = scale; // bigger box -> bigger mouse warp radius & strength
     const cssW = Math.round(window.innerWidth * scale);
     const cssH = Math.round(window.innerHeight * scale);
@@ -277,7 +284,7 @@ function fsrc(trailMax) {
   uniform vec2 u_res, u_video_res;
   uniform vec3 u_bg;
   uniform float u_cell, u_contrast, u_brightness, u_fisheye, u_fisheye_y;
-  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit, u_pixels;
+  uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit, u_pixels, u_edge_fade, u_edge_fade_x;
   uniform float u_glyph_count;
   uniform int u_trail_count;
   uniform vec3 u_trail[${trailMax}];
@@ -297,8 +304,9 @@ function fsrc(trailMax) {
     uv = (uv - 0.5) / u_zoom + 0.5;
     vec2 c = uv - 0.5;
     float r2 = dot(c, c);
-    uv.x += c.x * u_fisheye * r2;   // horizontal bulge
-    uv.y += c.y * u_fisheye_y * r2; // stronger vertical bulge on top/bottom edges
+    float bulge = 1.0 - u_fit; // fisheye ramps out as it zooms in; ends as a flat rectangle
+    uv.x += c.x * u_fisheye * bulge * r2;   // horizontal bulge
+    uv.y += c.y * u_fisheye_y * bulge * r2; // stronger vertical bulge on top/bottom edges
     for (int i = 0; i < ${trailMax}; i++) {
       if (i >= u_trail_count) break;
       vec2 d = (uv - u_trail[i].xy) * u_res;   // px offset from trail point
@@ -349,6 +357,15 @@ function fsrc(trailMax) {
     vec3 col = mix(u_bg, ink, a);
     float r2 = dot(suv - 0.5, suv - 0.5);
     col = mix(u_bg, col, mix(1.0 - u_vig, 1.0, smoothstep(0.75, 0.15, r2))); // vignette
+
+    // rectangular edge fade into the background, on the canvas edges (v_uv, not
+    // warped). Strong at the start, gone once zoomed to a full-viewport rect.
+    // ponytail: a dissolve to bg, not a separable gaussian; add real blur if this reads too crisp.
+    float efX = smoothstep(0.0, u_edge_fade_x, min(v_uv.x, 1.0 - v_uv.x)); // narrower on the sides
+    float efT = smoothstep(0.0, u_edge_fade, min(v_uv.y, 1.0 - v_uv.y));
+    float ef = min(efX, efT);
+    col = mix(u_bg, col, mix(1.0, ef, 1.0 - u_fit)); // all fade gone at full zoom (u_fit=1)
+
     col = mix(u_bg, col, u_flash);                                     // power-on ramp
 
     gl_FragColor = vec4(col, 1.0);
