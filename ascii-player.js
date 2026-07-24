@@ -332,7 +332,7 @@ function fsrc(trailMax) {
         // per-cell jitter on the falloff so the affected region has a ragged,
         // noisy edge instead of a clean visible circle
         float edge = 0.4 + 1.2 * hash(floor(uv * u_res / u_cell));
-        float f = exp(-dot(d, d) / (u_mouse_radius * u_mouse_radius) * edge);
+        float f = max(0.0, exp(-dot(d, d) / (u_mouse_radius * u_mouse_radius) * edge) - 0.01); // floor kills stray rim cells
         // horizontal tearing: shove whole scanline bands sideways, but only the
         // fraction of rows whose random gate fires this frame (digital tear)
         float row = floor(uv.y * 60.0);
@@ -400,7 +400,7 @@ function fsrc(trailMax) {
     if (u_pixels > 0.5 && u_trail_count > 0) {
       vec2 sd = (suv - u_trail[0].xy) * u_res;
       float edge = 0.4 + 1.2 * hash(cellId + 1.0);
-      float sf = exp(-dot(sd, sd) / (u_mouse_radius * u_mouse_radius) * edge);
+      float sf = exp(-dot(sd, sd) / (u_mouse_radius * u_mouse_radius) * edge) - 0.05; // floor kills stray rim cells
       float ts = floor(u_time * 24.0);
       if (hash(cellId + ts) < sf) {
         vec3 sp = vec3(hash(cellId * 1.3 + ts), hash(cellId * 1.3 + ts + 2.0), hash(cellId * 1.3 + ts + 4.0));
