@@ -86,9 +86,11 @@
     const src = new URLSearchParams(location.search).get("v") || "sample.mp4";
     const hint = document.querySelector(".hint");
     const pxBtn = document.getElementById("px-toggle");
+    const coarse = matchMedia("(pointer: coarse)").matches;
     const tv = mountAsciiPlayer(document.getElementById("tv"), src, {
       onError: () => { hint.textContent = "could not load video: " + src; },
       onPixels: (on) => { pxBtn.textContent = on ? "pixels" : "ascii"; }, // fires for button, P key, double-tap
+      ...(coarse && { growEnd: 0.78 }), // leave room for hint + buttons on mobile
     });
     document.getElementById("bg-toggle").addEventListener("click", () => {
       const light = document.body.classList.toggle("light");
