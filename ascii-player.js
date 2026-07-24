@@ -22,6 +22,8 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     mouseRadius: 70, // px falloff of the cursor fuzz (glyph view)
     fuzzAmount: 1.3, // scramble strength at the cursor center (>1 = core fully scrambled, rim flickers)
     pixelCell: 12, // cell size in pixel view (smaller = higher resolution)
+    pixelContrast: 1.05, // extra contrast in pixel view (multiplies around mid-gray)
+    pixelBrightness: -0.05, // extra brightness in pixel view (negative = darker)
     warpRadius: 85, // px falloff of the cursor glitch/static (pixel view)
     warpStrength: 10, // px block-tear displacement at the cursor (pixel view)
     chroma: 2.0, // px RGB split
@@ -96,6 +98,8 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     bg: u("u_bg"),
     flash: u("u_flash"),
     glyphCount: u("u_glyph_count"),
+    pixelContrast: u("u_pixel_contrast"),
+    pixelBrightness: u("u_pixel_brightness"),
     trailCount: u("u_trail_count"),
     trail: u("u_trail"), // vec3[]: (uv.x, uv.y, fuzz amount)
     time: u("u_time"),
@@ -115,6 +119,8 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   gl.uniform1f(U.edgeFade, p.edgeFade);
   gl.uniform1f(U.edgeFadeX, p.edgeFadeX);
   gl.uniform1f(U.glyphCount, p.glyphChars.length);
+  gl.uniform1f(U.pixelContrast, p.pixelContrast);
+  gl.uniform1f(U.pixelBrightness, p.pixelBrightness);
 
   // --- interaction: mouse warp (exact) + scroll-driven growth ------------
   const mouse = { x: 0, y: 0, on: false }; // single live point under the cursor
@@ -297,7 +303,7 @@ function fsrc(trailMax) {
   uniform vec3 u_bg;
   uniform float u_cell, u_contrast, u_brightness, u_fisheye, u_fisheye_y;
   uniform float u_mouse_radius, u_chroma, u_glow, u_scan, u_vig, u_zoom, u_flash, u_fit, u_pixels, u_edge_fade, u_edge_fade_x;
-  uniform float u_glyph_count;
+  uniform float u_glyph_count, u_pixel_contrast, u_pixel_brightness;
   uniform int u_trail_count;
   uniform vec3 u_trail[${trailMax}];
   uniform float u_time;
@@ -417,6 +423,7 @@ function fsrc(trailMax) {
     // vertical aperture-grille stripes) with a rounded horizontal scanline gap.
     // Boosted to offset the 2/3 of light the grille masks out.
     if (u_pixels > 0.5) {
+      ink = clamp((ink - 0.5) * u_pixel_contrast + 0.5 + u_pixel_brightness, 0.0, 1.0); // darker/contrastier, pixel view only
       vec3 grille = vec3(step(local.x, 0.34), step(0.33, local.x) * step(local.x, 0.67), step(0.66, local.x));
       float bar = smoothstep(0.0, 0.12, local.y) * smoothstep(1.0, 0.72, local.y);
       ink *= mix(vec3(1.0), grille * 2.2, 0.8) * mix(0.45, 1.15, bar);
