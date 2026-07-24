@@ -19,8 +19,11 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     brightness: 0.12, // additive, -1..1
     fisheye: 0.25, // horizontal barrel bulge strength
     fisheyeY: 0.55, // vertical bulge — higher = more curve on top/bottom edges
-    mouseRadius: 70, // px falloff of the cursor fuzz
+    mouseRadius: 70, // px falloff of the cursor fuzz (glyph view)
     fuzzAmount: 1.3, // scramble strength at the cursor center (>1 = core fully scrambled, rim flickers)
+    pixelCell: 12, // cell size in pixel view (smaller = higher resolution)
+    warpRadius: 85, // px falloff of the cursor glitch/static (pixel view)
+    warpStrength: 10, // px block-tear displacement at the cursor (pixel view)
     chroma: 2.0, // px RGB split
     glow: 0.7, // additive glyph glow
     scanline: 0.14,
@@ -128,7 +131,11 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
   let pixels = false;
   gl.uniform1f(U.pixels, 0);
   window.addEventListener("keydown", (e) => {
-    if (e.key === "p") { pixels = !pixels; gl.uniform1f(U.pixels, pixels ? 1 : 0); }
+    if (e.key === "p") {
+      pixels = !pixels;
+      gl.uniform1f(U.pixels, pixels ? 1 : 0);
+      gl.uniform1f(U.cell, pixels ? p.pixelCell : p.cell); // finer grid in pixel view
+    }
   });
   let growScale = p.growStart; // current box size as a fraction of the viewport
 
@@ -179,10 +186,13 @@ export function mountAsciiPlayer(canvas, videoSrc, opts = {}) {
     if (ready && video.readyState >= 2) {
       if (flashStart === 0) flashStart = now; // ramp on the first real frame, not an event
 
-      // one fuzz point, pinned under the cursor; radius scales with the box so
-      // a small tube fuzzes a tight spot, a full one a wider patch
-      gl.uniform1f(U.mouseRadius, p.mouseRadius * growScale);
-      gl.uniform3f(U.trail, mouse.x, mouse.y, p.fuzzAmount);
+      // one cursor point under the pointer. glyph view fuzzes (scrambles) it;
+      // pixel view warps the geometry (the old distortion trail). radius/strength
+      // differ per mode, and only one mode is live, so pick by `pixels`.
+      const radius = (pixels ? p.warpRadius : p.mouseRadius) * growScale;
+      const strength = pixels ? p.warpStrength * growScale : p.fuzzAmount;
+      gl.uniform1f(U.mouseRadius, radius);
+      gl.uniform3f(U.trail, mouse.x, mouse.y, strength);
       gl.uniform1i(U.trailCount, mouse.on ? 1 : 0);
       gl.uniform1f(U.time, now * 0.001);
 
@@ -304,8 +314,9 @@ function fsrc(trailMax) {
     return (uv - 0.5) * s + 0.5;
   }
 
-  // fisheye barrel + scroll zoom, all in screen space (cursor fuzz is applied
-  // to the glyph in main(), not to the geometry here)
+  // fisheye barrel + scroll zoom, all in screen space. In pixel view the cursor
+  // also warps the geometry (the old distortion trail); glyph view leaves the
+  // geometry alone and instead scrambles the glyph in main().
   vec2 warp(vec2 uv) {
     uv = (uv - 0.5) / u_zoom + 0.5;
     vec2 c = uv - 0.5;
@@ -313,6 +324,26 @@ function fsrc(trailMax) {
     float bulge = 1.0 - u_fit; // fisheye ramps out as it zooms in; ends as a flat rectangle
     uv.x += c.x * u_fisheye * bulge * r2;   // horizontal bulge
     uv.y += c.y * u_fisheye_y * bulge * r2; // stronger vertical bulge on top/bottom edges
+    if (u_pixels > 0.5) {
+      float t = floor(u_time * 18.0);            // glitch re-rolls ~18x/sec
+      for (int i = 0; i < ${trailMax}; i++) {
+        if (i >= u_trail_count) break;
+        vec2 d = (uv - u_trail[i].xy) * u_res;    // px offset from the cursor
+        // per-cell jitter on the falloff so the affected region has a ragged,
+        // noisy edge instead of a clean visible circle
+        float edge = 0.4 + 1.2 * hash(floor(uv * u_res / u_cell));
+        float f = exp(-dot(d, d) / (u_mouse_radius * u_mouse_radius) * edge);
+        // horizontal tearing: shove whole scanline bands sideways, but only the
+        // fraction of rows whose random gate fires this frame (digital tear)
+        float row = floor(uv.y * 60.0);
+        float sh = (hash(vec2(row, t)) - 0.5) * step(0.55, hash(vec2(row, t + 4.0)));
+        uv.x += sh * f * u_trail[i].z * 3.0 / u_res.x;
+        // blocky displacement: rectangular chunks hop vertically now and then
+        vec2 blk = floor(uv * vec2(24.0, 16.0));
+        float jv = (hash(blk + t) - 0.5) * step(0.8, hash(blk + t + 9.0));
+        uv.y += jv * f * u_trail[i].z * 2.0 / u_res.y;
+      }
+    }
     return uv;
   }
 
@@ -344,7 +375,7 @@ function fsrc(trailMax) {
     // the cursor, re-rolled ~30x a second (TV-static shimmer). fuzz>1 at center
     // so the core fully scrambles and only the rim probabilistically flickers.
     float fuzz = 0.0, t = 0.0;
-    if (u_trail_count > 0) {
+    if (u_trail_count > 0 && u_pixels < 0.5) {
       vec2 d = (suv - u_trail[0].xy) * u_res;
       fuzz = exp(-dot(d, d) / (u_mouse_radius * u_mouse_radius)) * u_trail[0].z - 0.001;
       t = floor(u_time * 30.0);
@@ -364,10 +395,32 @@ function fsrc(trailMax) {
     if (fuzz > 0.0 && hash(cellId + t + 5.0) < fuzz)
       tint = fract(tint + vec3(hash(cellId + t), hash(cellId + t + 2.0), hash(cellId + t + 4.0)));
 
+    // pixel view: TV static under the cursor. cells flip to random speckle
+    // (mostly grayscale, a little color), gated by a ragged non-circular falloff
+    if (u_pixels > 0.5 && u_trail_count > 0) {
+      vec2 sd = (suv - u_trail[0].xy) * u_res;
+      float edge = 0.4 + 1.2 * hash(cellId + 1.0);
+      float sf = exp(-dot(sd, sd) / (u_mouse_radius * u_mouse_radius) * edge);
+      float ts = floor(u_time * 24.0);
+      if (hash(cellId + ts) < sf) {
+        vec3 sp = vec3(hash(cellId * 1.3 + ts), hash(cellId * 1.3 + ts + 2.0), hash(cellId * 1.3 + ts + 4.0));
+        tint = mix(tint, mix(vec3(dot(sp, vec3(0.333))), sp, 0.4), 0.9); // mostly gray speckle
+      }
+    }
+
     // composite glyphs over the background: coverage = mask, dimmed by
     // scanlines; blends to u_bg so a white bg shows colored glyphs on paper
     // and a black bg keeps the emissive CRT look (identical to bg = black).
     vec3 ink = tint * (1.0 + u_glow);                                  // glyph color + glow
+
+    // pixel view -> fake a CRT: each cell becomes a lit phosphor triad (R/G/B
+    // vertical aperture-grille stripes) with a rounded horizontal scanline gap.
+    // Boosted to offset the 2/3 of light the grille masks out.
+    if (u_pixels > 0.5) {
+      vec3 grille = vec3(step(local.x, 0.34), step(0.33, local.x) * step(local.x, 0.67), step(0.66, local.x));
+      float bar = smoothstep(0.0, 0.12, local.y) * smoothstep(1.0, 0.72, local.y);
+      ink *= mix(vec3(1.0), grille * 2.2, 0.8) * mix(0.45, 1.15, bar);
+    }
     vec2 cuv = coverUV(center);                                        // letterbox test
     float inFrame = step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
     float a = inFrame * mask * (1.0 - u_scan * (0.5 + 0.5 * cos(suv.y * grid.y * 6.28318))); // scanlines
