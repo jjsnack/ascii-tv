@@ -75,6 +75,56 @@ Built-in interaction:
 - **scroll** grows it,
 - **P** toggles raw pixel blocks (solid color per cell, no glyphs).
 
+## Into a Hugo theme (no fork)
+
+Sites built on a Hugo theme (e.g. [Bridget](https://github.com/jjsnack/bridget))
+can mount the player on a single page **without forking or editing the theme** —
+if the theme renders Markdown with Goldmark `unsafe = true` (raw HTML pass
+through) and sets no CSP. Everything below lives in *your* site, not the theme.
+
+1. **Assets** → drop the files in your site's `static/`:
+   - `static/ascii-player.js`
+   - `static/clip.mp4`
+
+   These serve at `/ascii-player.js` and `/clip.mp4`.
+
+2. **Page** → paste straight into the page's Markdown (e.g.
+   `content/info.md`). With `unsafe = true` the `<script>` survives verbatim:
+
+   ```html
+   <canvas id="tv"></canvas>
+   <script type="module">
+     import { mountAsciiPlayer } from "/ascii-player.js";
+     mountAsciiPlayer(document.getElementById("tv"), "/clip.mp4");
+   </script>
+   ```
+
+   `type="module"` is required — the file uses `export`. Use root-absolute
+   paths (`/ascii-player.js`), not `./`, so it resolves from any page URL.
+
+### Reusable shortcode (optional)
+
+For several pages or cleaner content, add a **project-level** shortcode —
+`layouts/shortcodes/asciitv.html` in your site. Hugo layers it over the
+theme's shortcodes without touching them:
+
+```html
+<canvas id="asciitv-{{ .Ordinal }}"></canvas>
+<script type="module">
+  import { mountAsciiPlayer } from "{{ .Get "src" | default "/ascii-player.js" }}";
+  mountAsciiPlayer(document.getElementById("asciitv-{{ .Ordinal }}"),
+                   "{{ .Get "video" }}");
+</script>
+```
+
+Then in content: `{{</* asciitv video="/clip.mp4" */>}}`.
+
+Note: the player self-sizes to the viewport and grabs global scroll/resize/
+keydown — it's a page centerpiece, not a small inline widget. On a text page
+with theme chrome it will dominate; wrap the canvas if you need it contained.
+Verify with `hugo server`, open the page, check the console for the
+`ascii-tv: video failed to load` line if the src path is off.
+
 ## Gotchas
 
 - **Serve over http, not `file://`.** ES modules and the `<video>` GPU upload
