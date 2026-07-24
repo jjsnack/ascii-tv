@@ -65,7 +65,10 @@ Every key is an `opts` field with the default shown — tune to taste.
 | `glow` | `0.7` | additive glyph glow |
 | `scanline` | `0.14` | scanline depth |
 | `vignette` | `0.35` | corner darkening |
+| `edgeFade` | `0.18` | width of the top/bottom fade-into-background border (viewport fraction); fades out as it zooms in |
+| `edgeFadeX` | `0.07` | width of the left/right fade (viewport fraction); smaller = less blur on the sides |
 | `growStart` | `0.42` | viewport fraction the tube fills before scrolling |
+| `growEnd` | `0.9` | viewport fraction it grows to when fully scrolled (< 1 leaves side padding) |
 | `dprCap` | `2` | devicePixelRatio clamp (caps render cost on retina) |
 | `background` | `#000000` | clear color behind the tube |
 
