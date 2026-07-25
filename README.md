@@ -57,16 +57,16 @@ Every key is an `opts` field with the default shown — tune to taste.
 
 | Key | Default | What |
 |---|---|---|
-| `cell` | `16` | glyph cell size in internal px (bigger = chunkier, fewer cells) |
+| `cell` | `12` | glyph cell size in internal px (bigger = chunkier, fewer cells) |
 | `glyphFill` | `1.15` | glyph size vs cell (higher = less black between glyphs) |
 | `glyphChars` | `@#W$9876543210?!abc;:+=-,._` | dense→sparse ramp (index 0 = darkest pixel) |
 | `contrast` | `1.15` | luminance contrast before glyph pick |
 | `brightness` | `0.12` | additive luminance, `-1..1` |
-| `fisheye` | `0.25` | horizontal barrel bulge |
-| `fisheyeY` | `0.55` | vertical bulge (top/bottom edges) |
+| `fisheye` | `0.48` | horizontal barrel bulge |
+| `fisheyeY` | `0.86` | vertical bulge (top/bottom edges) |
 | `mouseRadius` | `70` | px falloff of the cursor fuzz, glyph view (scales with box size) |
 | `fuzzAmount` | `1.3` | glyph-scramble strength at the cursor (>1 = core fully scrambled, rim flickers) |
-| `pixelCell` | `12` | cell size in pixel view (smaller = higher resolution) |
+| `pixelCell` | `10` | cell size in pixel view (smaller = higher resolution) |
 | `pixelContrast` | `1.05` | extra luminance contrast in pixel view |
 | `pixelBrightness` | `-0.05` | extra luminance in pixel view (negative = darker) |
 | `warpRadius` | `85` | px falloff of the cursor glitch/static, pixel view |
@@ -75,9 +75,9 @@ Every key is an `opts` field with the default shown — tune to taste.
 | `glow` | `0.7` | additive glyph glow |
 | `scanline` | `0.14` | scanline depth |
 | `vignette` | `0.35` | corner darkening |
-| `edgeFade` | `0.18` | width of the top/bottom fade-into-background border (viewport fraction); fades out as it zooms in |
-| `edgeFadeX` | `0.07` | width of the left/right fade (viewport fraction); smaller = less blur on the sides |
-| `growStart` | `0.42` | viewport fraction the tube fills before scrolling |
+| `edgeFade` | `0.24` | width of the top/bottom fade-into-background border (viewport fraction); fades out as it zooms in |
+| `edgeFadeX` | `0.18` | width of the left/right fade (viewport fraction); smaller = less blur on the sides |
+| `growStart` | `0.55` | viewport fraction the tube fills before scrolling |
 | `growEnd` | `0.9` | viewport fraction it grows to when fully scrolled (< 1 leaves side padding) |
 | `dprCap` | `2` | devicePixelRatio clamp (caps render cost on retina) |
 | `background` | `#000000` | clear color behind the tube |
