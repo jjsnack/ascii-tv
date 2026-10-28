@@ -139,3 +139,5 @@ is wrong, check the console for the `ascii-tv: video failed to load` line.
 - **One canvas per call.** A mount drives its own `requestAnimationFrame` loop
   and attaches scroll and resize listeners. Call `mountAsciiPlayer` once per
   canvas.
+  In a single-page app, call the returned `destroy()` when the page unmounts, or
+  the loop, listeners and hidden `<video>` stay behind.

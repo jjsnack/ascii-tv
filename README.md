@@ -1,7 +1,7 @@
 # ascii-tv
 
 Turn any `<video>` into **realtime colored ASCII** on a canvas, warped like a
-CRT tube. Framework-free, zero deps — one WebGL pass does the whole thing.
+CRT tube. Framework-free, zero deps — two small WebGL passes do the whole thing.
 
 **[Live demo →](https://jjsnack.github.io/ascii-tv/)**
 
@@ -46,8 +46,11 @@ Copy `ascii-player.js`, point it at any same-origin (or CORS-enabled) video:
 </script>
 ```
 
-`mountAsciiPlayer(canvas, videoSrc, opts)` returns `{ video, setBackground }`
-(`setBackground(hex)` swaps the clear color live). The scroll-grow
+`mountAsciiPlayer(canvas, videoSrc, opts)` returns
+`{ video, setBackground, togglePixels, destroy }`: `setBackground(hex)` swaps the
+clear color live, `togglePixels()` flips glyph/pixel view, and `destroy()`
+removes the listeners, the hidden `<video>` and the GL resources (call it when
+the page or component unmounts). The scroll-grow
 effect needs a bit of page setup (fixed canvas + a tall scroll region) —
 see **[INTEGRATION.md](INTEGRATION.md)** for the full copy-paste.
 
@@ -75,12 +78,15 @@ Every key is an `opts` field with the default shown — tune to taste.
 | `glow` | `0.7` | additive glyph glow |
 | `scanline` | `0.14` | scanline depth |
 | `vignette` | `0.35` | corner darkening |
+| `edgeShade` | `0.45` | extra darkening toward the curved top/bottom tube edges (`0` = off); fades out as it zooms in |
 | `edgeFade` | `0.24` | width of the top/bottom fade-into-background border (viewport fraction); fades out as it zooms in |
 | `edgeFadeX` | `0.18` | width of the left/right fade (viewport fraction); smaller = less blur on the sides |
 | `growStart` | `0.55` | viewport fraction the tube fills before scrolling |
 | `growEnd` | `0.9` | viewport fraction it grows to when fully scrolled (< 1 leaves side padding) |
 | `dprCap` | `2` | devicePixelRatio clamp (caps render cost on retina) |
 | `background` | `#000000` | clear color behind the tube |
+| `onError` | — | called with the `MediaError` when the video fails to load |
+| `onPixels` | — | called with `true`/`false` whenever the view flips between pixels and glyphs (button, **P**, double-tap) |
 
 ## Notes
 
